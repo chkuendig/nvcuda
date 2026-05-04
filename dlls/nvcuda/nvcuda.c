@@ -36,6 +36,13 @@
 #include "wine/wgl.h"
 #include "cuda.h"
 #include "nvcuda.h"
+/* COBJMACROS gives us the C-style ID3D11Buffer_GetDesc(p, &d) helper macros
+ * (otherwise we'd have to write p->lpVtbl->GetDesc(p, &d)). INITGUID makes
+ * the DEFINE_GUID() macros in d3d11.h emit actual symbol definitions
+ * (IID_ID3D11Buffer, IID_ID3D11Texture2D, ...) instead of just declarations.
+ * Both used by the cuGraphicsD3D11RegisterResource probe below. */
+#define COBJMACROS
+#include "initguid.h"
 #include "d3d9.h"
 #include "d3d11.h"
 #include "function_mappings.h"
@@ -858,6 +865,12 @@ static CUresult (*pcuLaunchHostFunc_v2_ptsz)(CUstream hStream, CUhostFn fn, void
 // Unknown so far - Possibly some python usage?
 static CUresult (*pcuDriverGetGpuCodeIsaVersion)(void* param0, void* param1);
 
+/* D3D11 graphics interop — forwarded to the Linux libcuda.so (ZLUDA) via raw
+ * pointer. The PE-side wrapper (wine_cuGraphicsD3D11RegisterResource) does the
+ * COM introspection on pD3DResource before passing the pointer through. */
+static CUresult (*pcuGraphicsD3D11RegisterResource)(CUgraphicsResource *pCudaResource,
+    void *pD3DResource, unsigned int Flags);
+
 static void *cuda_handle = NULL;
 
 static BOOL load_functions(void)
@@ -1566,6 +1579,7 @@ static BOOL load_functions(void)
     TRY_LOAD_FUNCPTR(cuCoredumpDeregisterCompleteCallback);
     TRY_LOAD_FUNCPTR(cuLaunchHostFunc_v2);
     TRY_LOAD_FUNCPTR(cuLaunchHostFunc_v2);
+    TRY_LOAD_FUNCPTR(cuGraphicsD3D11RegisterResource);
 
     #undef LOAD_FUNCPTR
     #undef TRY_LOAD_FUNCPTR
@@ -6329,13 +6343,87 @@ CUresult WINAPI wine_cuD3D11GetDevice(CUdevice *pCudaDevice, IDXGIAdapter *pAdap
 
 CUresult WINAPI wine_cuGraphicsD3D11RegisterResource(CUgraphicsResource *pCudaResource, ID3D11Resource *pD3DResource, unsigned int Flags)
 {
-    FIXME("(%p, %p, %u) - semi-stub\n", pCudaResource, pD3DResource, Flags);
-    /* Not able to handle spesific flags at this time */
-    if(Flags > 0)
-      return CUDA_ERROR_INVALID_VALUE;
+    /* P0 probe (ZLUDA D3D11 interop investigation) — identify what the app is
+     * actually trying to register (buffer? texture? mip count?) before forwarding
+     * to libcuda.so. COM introspection happens HERE on the PE side because the
+     * Linux libcuda.so cannot safely call ID3D11Resource_* vtables (different
+     * calling convention). The raw pointer is forwarded to Linux as void *.
+     *
+     * Logs go through Wine's FIXME channel; capture with WINEDEBUG=fixme+nvcuda. */
+    if (pD3DResource)
+    {
+        ID3D11Buffer    *pBuf  = NULL;
+        ID3D11Texture1D *pTx1D = NULL;
+        ID3D11Texture2D *pTx2D = NULL;
+        ID3D11Texture3D *pTx3D = NULL;
 
-    /* pD3DResource is unknown at this time and cannot be "registered" */
-    return CUDA_ERROR_UNKNOWN;
+        if (SUCCEEDED(ID3D11Resource_QueryInterface(pD3DResource,
+                &IID_ID3D11Buffer, (void **)&pBuf)))
+        {
+            D3D11_BUFFER_DESC d;
+            ID3D11Buffer_GetDesc(pBuf, &d);
+            FIXME("[ZLUDA-P0] Buffer ByteWidth=%u BindFlags=0x%x Usage=%d "
+                  "MiscFlags=0x%x Stride=%u flags=%u (cuda_res=%p d3d_res=%p)\n",
+                  d.ByteWidth, d.BindFlags, d.Usage, d.MiscFlags,
+                  d.StructureByteStride, Flags, pCudaResource, pD3DResource);
+            ID3D11Buffer_Release(pBuf);
+        }
+        else if (SUCCEEDED(ID3D11Resource_QueryInterface(pD3DResource,
+                &IID_ID3D11Texture2D, (void **)&pTx2D)))
+        {
+            D3D11_TEXTURE2D_DESC d;
+            ID3D11Texture2D_GetDesc(pTx2D, &d);
+            FIXME("[ZLUDA-P0] Tex2D %ux%u fmt=%u mips=%u arr=%u samp=%ux%u "
+                  "bind=0x%x misc=0x%x usage=%d flags=%u (cuda_res=%p d3d_res=%p)\n",
+                  d.Width, d.Height, d.Format, d.MipLevels, d.ArraySize,
+                  d.SampleDesc.Count, d.SampleDesc.Quality,
+                  d.BindFlags, d.MiscFlags, d.Usage, Flags,
+                  pCudaResource, pD3DResource);
+            ID3D11Texture2D_Release(pTx2D);
+        }
+        else if (SUCCEEDED(ID3D11Resource_QueryInterface(pD3DResource,
+                &IID_ID3D11Texture1D, (void **)&pTx1D)))
+        {
+            D3D11_TEXTURE1D_DESC d;
+            ID3D11Texture1D_GetDesc(pTx1D, &d);
+            FIXME("[ZLUDA-P0] Tex1D w=%u fmt=%u mips=%u arr=%u bind=0x%x "
+                  "misc=0x%x usage=%d flags=%u (cuda_res=%p d3d_res=%p)\n",
+                  d.Width, d.Format, d.MipLevels, d.ArraySize,
+                  d.BindFlags, d.MiscFlags, d.Usage, Flags,
+                  pCudaResource, pD3DResource);
+            ID3D11Texture1D_Release(pTx1D);
+        }
+        else if (SUCCEEDED(ID3D11Resource_QueryInterface(pD3DResource,
+                &IID_ID3D11Texture3D, (void **)&pTx3D)))
+        {
+            D3D11_TEXTURE3D_DESC d;
+            ID3D11Texture3D_GetDesc(pTx3D, &d);
+            FIXME("[ZLUDA-P0] Tex3D %ux%ux%u fmt=%u mips=%u bind=0x%x "
+                  "misc=0x%x usage=%d flags=%u (cuda_res=%p d3d_res=%p)\n",
+                  d.Width, d.Height, d.Depth, d.Format, d.MipLevels,
+                  d.BindFlags, d.MiscFlags, d.Usage, Flags,
+                  pCudaResource, pD3DResource);
+            ID3D11Texture3D_Release(pTx3D);
+        }
+        else
+        {
+            FIXME("[ZLUDA-P0] Unknown D3D11Resource type ptr=%p flags=%u (cuda_res=%p)\n",
+                  pD3DResource, Flags, pCudaResource);
+        }
+    }
+    else
+    {
+        FIXME("[ZLUDA-P0] NULL pD3DResource (cuda_res=%p flags=%u)\n",
+              pCudaResource, Flags);
+    }
+
+    /* Forward to libcuda.so. The Rust side currently returns NOT_SUPPORTED until
+     * the real implementation lands; this is intentional so the P0 logs above
+     * are not contaminated by a spurious-success codepath. */
+    if (pcuGraphicsD3D11RegisterResource)
+        return pcuGraphicsD3D11RegisterResource(pCudaResource, pD3DResource, Flags);
+
+    return CUDA_ERROR_NOT_SUPPORTED;
 }
 
 CUresult WINAPI wine_cuD3D11CtxCreate(CUcontext* pCtx, CUdevice* pCudaDevice, unsigned int Flags, ID3D11Device* pD3DDevice)
