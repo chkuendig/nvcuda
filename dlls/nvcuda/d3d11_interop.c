@@ -21,10 +21,13 @@
 
 #include "windef.h"
 #include "winbase.h"
+#include "winternl.h"
+#include "winioctl.h"
 #include "wine/debug.h"
 #define COBJMACROS
 #include "initguid.h"
 #include "d3d11.h"
+
 
 #include "d3d11_interop.h"
 
@@ -173,8 +176,10 @@ typedef void (*PFN_vkGetPhysicalDeviceMemoryProperties)(VkPhysicalDevice, VkPhys
  * interfaces have many more methods but we don't need them for register.
  * ========================================================================== */
 
-DEFINE_GUID(IID_IDXGIVkInteropSurface, 0x5546cf8c, 0x77e7, 0x4341, 0xb0, 0x5d, 0x8d, 0x4d, 0x50, 0x00, 0xe7, 0x7d);
-DEFINE_GUID(IID_IDXGIVkInteropDevice,  0xe2ef5fa5, 0xdc21, 0x4af7, 0x90, 0xc4, 0xf6, 0x7e, 0xf6, 0xa0, 0x93, 0x23);
+DEFINE_GUID(IID_IDXGIVkInteropSurface,  0x5546cf8c, 0x77e7, 0x4341, 0xb0, 0x5d, 0x8d, 0x4d, 0x50, 0x00, 0xe7, 0x7d);
+DEFINE_GUID(IID_IDXGIVkInteropDevice,   0xe2ef5fa5, 0xdc21, 0x4af7, 0x90, 0xc4, 0xf6, 0x7e, 0xf6, 0xa0, 0x93, 0x23);
+DEFINE_GUID(IID_IDXGIVkInteropDevice1,  0xe2ef5fa5, 0xdc21, 0x4af7, 0x90, 0xc4, 0xf6, 0x7e, 0xf6, 0xa0, 0x93, 0x24);
+DEFINE_GUID(IID_IDXGIVkInteropDevice2,  0xe2ef5fa5, 0xdc21, 0x4af7, 0x90, 0xc4, 0xf6, 0x7e, 0xf6, 0xa0, 0x93, 0x25);
 
 typedef struct VkImageCreateInfo {
     uint32_t  sType;
@@ -208,16 +213,36 @@ typedef struct IDXGIVkInteropSurfaceVtbl {
 } IDXGIVkInteropSurfaceVtbl;
 struct IDXGIVkInteropSurface { const IDXGIVkInteropSurfaceVtbl *lpVtbl; };
 
-/* IDXGIVkInteropDevice — only need GetVulkanHandles for register; the layout
- * Map flow (Lock/Flush/Submit) needs more methods we'll add later. */
+/* IDXGIVkInteropDevice2 — chkuendig/dxvk@zluda-physx fork extension that
+ * adds AllocateExternalBuffer / CopySurfaceToExternalBuffer /
+ * FreeExternalBuffer methods. We declare ALL methods up to and including
+ * the new ones so the vtable layout matches DXVK's class. Methods we
+ * don't call still need to be in the right slot positions. */
+struct VkImageSubresourceRange_stub { uint32_t members[6]; };
+typedef struct VkCmdQueue_stub { uint64_t handle; } VkCmdQueue_stub;
+
 typedef struct IDXGIVkInteropDeviceVtbl {
     /* IUnknown */
     HRESULT (STDMETHODCALLTYPE *QueryInterface)(IDXGIVkInteropDevice*, REFIID, void**);
     ULONG   (STDMETHODCALLTYPE *AddRef)(IDXGIVkInteropDevice*);
     ULONG   (STDMETHODCALLTYPE *Release)(IDXGIVkInteropDevice*);
-    /* IDXGIVkInteropDevice */
+    /* IDXGIVkInteropDevice (slots 3..8) */
     void    (STDMETHODCALLTYPE *GetVulkanHandles)(IDXGIVkInteropDevice*, VkInstance*, VkPhysicalDevice*, VkDevice*);
-    /* others omitted intentionally — Map flow will need them later */
+    void    (STDMETHODCALLTYPE *GetSubmissionQueue)(IDXGIVkInteropDevice*, uint64_t*, uint32_t*);
+    void    (STDMETHODCALLTYPE *TransitionSurfaceLayout)(IDXGIVkInteropDevice*, void*, void*, uint32_t, uint32_t);
+    void    (STDMETHODCALLTYPE *FlushRenderingCommands)(IDXGIVkInteropDevice*);
+    void    (STDMETHODCALLTYPE *LockSubmissionQueue)(IDXGIVkInteropDevice*);
+    void    (STDMETHODCALLTYPE *ReleaseSubmissionQueue)(IDXGIVkInteropDevice*);
+    /* IDXGIVkInteropDevice1 (slots 9..10) */
+    void    (STDMETHODCALLTYPE *GetSubmissionQueue1)(IDXGIVkInteropDevice*, uint64_t*, uint32_t*, uint32_t*);
+    HRESULT (STDMETHODCALLTYPE *CreateTexture2DFromVkImage)(IDXGIVkInteropDevice*, void*, VkImage, void**);
+    /* IDXGIVkInteropDevice2 — ZLUDA fork extension (slots 11..13) */
+    HRESULT (STDMETHODCALLTYPE *AllocateExternalBuffer)(IDXGIVkInteropDevice*,
+        uint64_t Size, HANDLE* pHandle, uint64_t* pBufferOut, uint64_t* pMemoryOut, uint64_t* pAllocSizeOut);
+    HRESULT (STDMETHODCALLTYPE *CopySurfaceToExternalBuffer)(IDXGIVkInteropDevice*,
+        IDXGIVkInteropSurface* pSrc, uint64_t Dst, uint64_t DstSize, unsigned int DstRowPitch);
+    void    (STDMETHODCALLTYPE *FreeExternalBuffer)(IDXGIVkInteropDevice*,
+        uint64_t Buffer, uint64_t Memory);
 } IDXGIVkInteropDeviceVtbl;
 struct IDXGIVkInteropDevice { const IDXGIVkInteropDeviceVtbl *lpVtbl; };
 
@@ -241,8 +266,8 @@ static PFN_vkGetBufferMemoryRequirements       g_vkGetBufferMemoryRequirements =
 static PFN_vkAllocateMemory                    g_vkAllocateMemory = NULL;
 static PFN_vkFreeMemory                        g_vkFreeMemory = NULL;
 static PFN_vkBindBufferMemory                  g_vkBindBufferMemory = NULL;
-static PFN_vkGetMemoryFdKHR                    g_vkGetMemoryFdKHR = NULL;
-static PFN_vkGetMemoryWin32HandleKHR           g_vkGetMemoryWin32HandleKHR = NULL;
+static PFN_vkGetMemoryFdKHR                    g_vkGetMemoryFdKHR __attribute__((unused)) = NULL;
+static PFN_vkGetMemoryWin32HandleKHR           g_vkGetMemoryWin32HandleKHR __attribute__((unused)) = NULL;
 static PFN_vkGetPhysicalDeviceMemoryProperties g_vkGetPhysicalDeviceMemoryProperties = NULL;
 
 /* Wine internals — used to translate the NT HANDLE returned by
@@ -310,25 +335,20 @@ static int load_vulkan_loader(void)
  * works directly. Fall back to vkGetDeviceProcAddr / vkGetInstanceProcAddr
  * only if a function is missing from the static export table (rare for
  * winevulkan.dll). */
-#define RESOLVE_DEV(name) \
-    do { \
-        FIXME("[ZLUDA-vk] RESOLVE_DEV(\"%s\") begin\n", #name); \
-        FARPROC __p = GetProcAddress(g_vulkan_module, #name); \
-        FIXME("[ZLUDA-vk] RESOLVE_DEV(\"%s\") GetProcAddress=%p\n", #name, __p); \
-        g_##name = (PFN_##name)__p; \
-        if (!g_##name && g_vkGetDeviceProcAddr) { \
-            FIXME("[ZLUDA-vk] RESOLVE_DEV(\"%s\") fallback dpa=%p\n", #name, g_vkGetDeviceProcAddr); \
-            g_##name = (PFN_##name)g_vkGetDeviceProcAddr(dev, #name); \
-        } \
-        FIXME("[ZLUDA-vk] RESOLVE_DEV(\"%s\") final=%p\n", #name, g_##name); \
-        if (!g_##name) { ERR("[ZLUDA] resolve(\"%s\") returned NULL\n", #name); return -1; } \
-    } while (0)
+/* Resolution: GetProcAddress first (covers the core fns winevulkan.dll
+ * statically exports), fall back to vkGetInstanceProcAddr(inst, fn) which
+ * works for ANY Vulkan command per spec — instance, physical-device, OR
+ * device-level — at the cost of an extra dispatch hop. Wine's KHR
+ * extension functions only resolve via this path. */
+#define RESOLVE_DEV(name) RESOLVE_INST(name)
 #define RESOLVE_INST(name) \
     do { \
-        FARPROC __p = GetProcAddress(g_vulkan_module, #name); \
-        g_##name = (PFN_##name)__p; \
-        if (!g_##name && g_vkGetInstanceProcAddr) \
+        FIXME("[ZLUDA-vk] RESOLVE(\"%s\") begin\n", #name); \
+        g_##name = (PFN_##name)GetProcAddress(g_vulkan_module, #name); \
+        FIXME("[ZLUDA-vk] RESOLVE(\"%s\") GetProcAddress=%p\n", #name, g_##name); \
+        if (!g_##name) \
             g_##name = (PFN_##name)g_vkGetInstanceProcAddr(inst, #name); \
+        FIXME("[ZLUDA-vk] RESOLVE(\"%s\") final=%p\n", #name, g_##name); \
         if (!g_##name) { ERR("[ZLUDA] resolve(\"%s\") returned NULL\n", #name); return -1; } \
     } while (0)
 
@@ -337,24 +357,21 @@ static int load_vulkan_loader(void)
  * Remove once the crash is understood. */
 #define STEP2(msg, ...) FIXME("[ZLUDA-vk] " msg "\n", ##__VA_ARGS__)
 
+__attribute__((unused))
 static int load_vulkan_fns(VkInstance inst, VkPhysicalDevice phys, VkDevice dev)
 {
     STEP2("enter inst=%p phys=%p dev=%p", (void*)(uintptr_t)inst, (void*)(uintptr_t)phys, (void*)(uintptr_t)dev);
     if (g_vk_device == dev && g_vk_phys_device == phys) { STEP2("cached"); return 0; }
     STEP2("loader");
     if (load_vulkan_loader() != 0) return -1;
-    /* Bootstrap vkGetDeviceProcAddr properly: it MUST come from
-     * vkGetInstanceProcAddr(inst, ...) so it has the loader's per-device
-     * dispatch wrapping. Wine's KHR extension functions (vkGetMemoryWin32HandleKHR
-     * etc.) are NOT in the static PE export table — they're only reachable via
-     * the dispatched vkGetDeviceProcAddr. */
-    g_vkGetDeviceProcAddr = (PFN_vkGetDeviceProcAddr)
-        g_vkGetInstanceProcAddr(inst, "vkGetDeviceProcAddr");
-    if (!g_vkGetDeviceProcAddr) {
-        ERR("[ZLUDA] vkGetInstanceProcAddr(inst, \"vkGetDeviceProcAddr\") returned NULL\n");
-        return -1;
-    }
-    STEP2("loader OK module=%p ipa=%p dpa=%p", g_vulkan_module, g_vkGetInstanceProcAddr, g_vkGetDeviceProcAddr);
+    /* Wine's winevulkan.dll doesn't expose vkGetDeviceProcAddr through
+     * vkGetInstanceProcAddr(inst, ...) — that path returns NULL. Per
+     * Vulkan spec, vkGetInstanceProcAddr(inst, fn) IS valid for ANY
+     * function (instance/physical-device/device-level), with the cost
+     * of an extra dispatch hop. Use it directly for everything. */
+    g_vkGetDeviceProcAddr = NULL;  /* not used in this iteration */
+    STEP2("loader OK module=%p ipa=%p (skipping dpa bootstrap)",
+          g_vulkan_module, g_vkGetInstanceProcAddr);
 
     RESOLVE_DEV(vkCreateBuffer); STEP2("vkCreateBuffer=%p", g_vkCreateBuffer);
     RESOLVE_DEV(vkDestroyBuffer); STEP2("vkDestroyBuffer=%p", g_vkDestroyBuffer);
@@ -395,6 +412,7 @@ static int load_vulkan_fns(VkInstance inst, VkPhysicalDevice phys, VkDevice dev)
 /* Pick a memory type that's both DEVICE_LOCAL (so CUDA reads are fast on the
  * GPU) and supported by the buffer's memoryTypeBits. We don't need
  * HOST_VISIBLE because CUDA accesses go through the GPU. */
+__attribute__((unused))
 static int find_memory_type(uint32_t type_bits, VkMemoryPropertyFlags want)
 {
     for (uint32_t i = 0; i < g_vk_mem_props.memoryTypeCount; ++i) {
@@ -460,186 +478,154 @@ int zluda_d3d11_setup_external_memory(
         return ZLUDA_D3D11_ERR_NOT_SUPPORTED;
     }
 
-    /* Query DXVK interop interfaces */
+    /* Query DXVK's IDXGIVkInteropSurface, then its IDXGIVkInteropDevice2
+     * (the chkuendig/dxvk@zluda-physx fork-only extension that adds
+     * AllocateExternalBuffer). The whole Vulkan dance happens inside
+     * DXVK, where the per-device function pointers are correctly resolved;
+     * application PE-side code can't reach vkGetMemoryWin32HandleKHR
+     * directly (Wine's loader filters it out, GetProcAddress returns NULL,
+     * vkGetInstanceProcAddr also returns NULL). */
     IDXGIVkInteropSurface *pInteropSurf = NULL;
     STEP("QI IDXGIVkInteropSurface");
     if (FAILED(ID3D11Resource_QueryInterface(pD3DResource,
             &IID_IDXGIVkInteropSurface, (void**)&pInteropSurf))) {
-        ERR("[ZLUDA] QueryInterface(IDXGIVkInteropSurface) failed — DXVK missing or wrong version\n");
+        ERR("[ZLUDA] QueryInterface(IDXGIVkInteropSurface) failed — DXVK missing\n");
         return ZLUDA_D3D11_ERR_DXVK_INTEROP_MISSING;
     }
-    STEP("InteropSurface pInteropSurf=%p, GetDevice", pInteropSurf);
     IDXGIVkInteropDevice *pInteropDev = NULL;
     if (FAILED(pInteropSurf->lpVtbl->GetDevice(pInteropSurf, &pInteropDev))) {
         ERR("[ZLUDA] IDXGIVkInteropSurface::GetDevice failed\n");
         pInteropSurf->lpVtbl->Release(pInteropSurf);
         return ZLUDA_D3D11_ERR_DXVK_INTEROP_MISSING;
     }
-    STEP("InteropDevice pInteropDev=%p, GetVulkanHandles", pInteropDev);
-    VkInstance       vk_instance     = 0;
-    VkPhysicalDevice vk_phys         = 0;
-    VkDevice         vk_dev          = 0;
-    pInteropDev->lpVtbl->GetVulkanHandles(pInteropDev, &vk_instance, &vk_phys, &vk_dev);
-    STEP("GetVulkanHandles inst=%p phys=%p dev=%p", (void*)(uintptr_t)vk_instance, (void*)(uintptr_t)vk_phys, (void*)(uintptr_t)vk_dev);
-    pInteropDev->lpVtbl->Release(pInteropDev);
     pInteropSurf->lpVtbl->Release(pInteropSurf);
 
-    if (!vk_instance || !vk_phys || !vk_dev) {
-        ERR("[ZLUDA] GetVulkanHandles returned NULL handle (inst=%p phys=%p dev=%p)\n",
-            (void*)(uintptr_t)vk_instance, (void*)(uintptr_t)vk_phys, (void*)(uintptr_t)vk_dev);
+    /* QI for the fork-extended interface. If this fails we're running with
+     * upstream DXVK without our patch — degrade gracefully to NOT_SUPPORTED
+     * (caller will fall back to pcuGraphicsD3D11RegisterResource which
+     * returns NOT_SUPPORTED, and Batman has a CPU fallback). */
+    IDXGIVkInteropDevice *pInteropDev2 = NULL;
+    STEP("QI IDXGIVkInteropDevice2");
+    HRESULT hr = pInteropDev->lpVtbl->QueryInterface(pInteropDev,
+        &IID_IDXGIVkInteropDevice2, (void**)&pInteropDev2);
+    pInteropDev->lpVtbl->Release(pInteropDev);
+    if (FAILED(hr) || !pInteropDev2) {
+        ERR("[ZLUDA] QueryInterface(IDXGIVkInteropDevice2) failed — chkuendig/dxvk fork required\n");
         return ZLUDA_D3D11_ERR_DXVK_INTEROP_MISSING;
     }
 
-    STEP("load_vulkan_fns");
-    if (load_vulkan_fns(vk_instance, vk_phys, vk_dev) != 0) {
-        return ZLUDA_D3D11_ERR_VULKAN_LOAD;
-    }
-    STEP("load_vulkan_fns OK");
-
-    /* Allocate a LINEAR-tiled VkBuffer with external-memory bits. We use a
-     * buffer rather than an image because:
-     *   - HIP's hipExternalMemoryGetMappedBuffer wants a flat dev_ptr, not
-     *     a hipArray.
-     *   - Batman is observed to call cuGraphicsResourceGetMappedPointer_v2
-     *     (linear pointer path) — see project_d3d11_p0_resource_descriptor.md.
-     *   - LINEAR tiling is the only option ROCm's external-memory import
-     *     path supports robustly. */
-    const uint64_t pixel_size = 16; /* R32G32B32A32_FLOAT = 4 floats * 4 bytes */
+    /* Pixel size + size for canonical R32G32B32A32_FLOAT */
+    const uint64_t pixel_size = 16;
     const uint64_t pitch      = (uint64_t)tex_desc.Width * pixel_size;
     const uint64_t alloc_size = pitch * tex_desc.Height;
 
-    /* Wine substitutes external_memory_fd → external_memory_win32 in the
-     * PE-visible extension list, so we have to use OPAQUE_WIN32_BIT here even
-     * though the underlying mechanism is dma_buf. The HANDLE we get from
-     * vkGetMemoryWin32HandleKHR will be unwrapped to its real Linux fd via
-     * wine_server_handle_to_fd below. */
-    VkExternalMemoryBufferCreateInfo ext_buf_info = {
-        .sType       = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO,
-        .pNext       = NULL,
-        .handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT,
-    };
-    VkBufferCreateInfo buf_info = {
-        .sType                 = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .pNext                 = &ext_buf_info,
-        .flags                 = 0,
-        .size                  = alloc_size,
-        .usage                 = VK_BUFFER_USAGE_TRANSFER_SRC_BIT
-                               | VK_BUFFER_USAGE_TRANSFER_DST_BIT
-                               | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-        .sharingMode           = VK_SHARING_MODE_EXCLUSIVE,
-        .queueFamilyIndexCount = 0,
-        .pQueueFamilyIndices   = NULL,
-    };
-    VkBuffer vk_buf = 0;
-    STEP("vkCreateBuffer size=%llu", (unsigned long long)alloc_size);
-    VkResult vr = g_vkCreateBuffer(vk_dev, &buf_info, NULL, &vk_buf);
-    STEP("vkCreateBuffer vr=%d vk_buf=%p", vr, (void*)(uintptr_t)vk_buf);
-    if (vr != VK_SUCCESS) {
-        ERR("[ZLUDA] vkCreateBuffer failed: %d\n", vr);
+    HANDLE         win32_handle = NULL;
+    uint64_t       vk_buffer    = 0;
+    uint64_t       vk_memory    = 0;
+    uint64_t       actual_size  = 0;
+
+    STEP("AllocateExternalBuffer size=%llu", (unsigned long long)alloc_size);
+    hr = pInteropDev2->lpVtbl->AllocateExternalBuffer(pInteropDev2,
+        alloc_size, &win32_handle, &vk_buffer, &vk_memory, &actual_size);
+    STEP("AllocateExternalBuffer hr=0x%x handle=%p buf=0x%llx mem=0x%llx size=%llu",
+         hr, win32_handle, (unsigned long long)vk_buffer,
+         (unsigned long long)vk_memory, (unsigned long long)actual_size);
+    if (FAILED(hr) || !win32_handle) {
+        ERR("[ZLUDA] AllocateExternalBuffer failed: hr=0x%x\n", hr);
+        pInteropDev2->lpVtbl->Release(pInteropDev2);
         return ZLUDA_D3D11_ERR_VULKAN_CALL;
     }
 
-    VkMemoryRequirements req = { 0 };
-    STEP("vkGetBufferMemoryRequirements");
-    g_vkGetBufferMemoryRequirements(vk_dev, vk_buf, &req);
-    STEP("memReqs size=%llu align=%llu typeBits=0x%x", (unsigned long long)req.size, (unsigned long long)req.alignment, req.memoryTypeBits);
-
-    int mem_type = find_memory_type(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    if (mem_type < 0) {
-        ERR("[ZLUDA] no DEVICE_LOCAL memory type found (typeBits=0x%x)\n", req.memoryTypeBits);
-        g_vkDestroyBuffer(vk_dev, vk_buf, NULL);
-        return ZLUDA_D3D11_ERR_NO_MEMORY_TYPE;
+    /* Translate the SharedGpuResource HANDLE to the underlying Linux fd.
+     *
+     * Wine's vkGetMemoryWin32HandleKHR doesn't return a raw NT-section
+     * HANDLE — it returns a HANDLE backed by Wine's `\\??\\SharedGpuResource`
+     * device driver. To get the real fd we must ioctl the driver with
+     * IOCTL_SHARED_GPU_RESOURCE_GET_UNIX_RESOURCE first, which gives us a
+     * wine_server-managed HANDLE, and only THEN can wine_server_handle_to_fd
+     * unwrap that to the Linux fd. See Wine's own
+     * winevulkan/vulkan.c::get_shared_resource_fd() — same two-step. */
+    if (!g_wine_server_handle_to_fd) {
+        if (!g_ntdll_so_handle) g_ntdll_so_handle = dlopen("ntdll.so", RTLD_NOW | RTLD_NOLOAD);
+        if (!g_ntdll_so_handle) g_ntdll_so_handle = dlopen("ntdll.so", RTLD_NOW);
+        if (g_ntdll_so_handle) {
+            g_wine_server_handle_to_fd = (PFN_wine_server_handle_to_fd)
+                dlsym(g_ntdll_so_handle, "wine_server_handle_to_fd");
+        }
+        if (!g_wine_server_handle_to_fd) {
+            ERR("[ZLUDA] dlsym(ntdll.so, wine_server_handle_to_fd) NULL: %s\n", dlerror());
+            pInteropDev2->lpVtbl->FreeExternalBuffer(pInteropDev2, vk_buffer, vk_memory);
+            CloseHandle(win32_handle);
+            pInteropDev2->lpVtbl->Release(pInteropDev2);
+            return ZLUDA_D3D11_ERR_VULKAN_LOAD;
+        }
     }
 
-    VkExportMemoryAllocateInfo export_info = {
-        .sType       = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO,
-        .pNext       = NULL,
-        .handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT,
-    };
-    VkMemoryAllocateInfo alloc_info = {
-        .sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .pNext           = &export_info,
-        .allocationSize  = req.size,
-        .memoryTypeIndex = (uint32_t)mem_type,
-    };
-    VkDeviceMemory vk_mem = 0;
-    STEP("vkAllocateMemory typeIdx=%d", mem_type);
-    vr = g_vkAllocateMemory(vk_dev, &alloc_info, NULL, &vk_mem);
-    STEP("vkAllocateMemory vr=%d vk_mem=%p", vr, (void*)(uintptr_t)vk_mem);
-    if (vr != VK_SUCCESS) {
-        ERR("[ZLUDA] vkAllocateMemory failed: %d\n", vr);
-        g_vkDestroyBuffer(vk_dev, vk_buf, NULL);
-        return ZLUDA_D3D11_ERR_VULKAN_CALL;
-    }
-
-    STEP("vkBindBufferMemory");
-    vr = g_vkBindBufferMemory(vk_dev, vk_buf, vk_mem, 0);
-    if (vr != VK_SUCCESS) {
-        ERR("[ZLUDA] vkBindBufferMemory failed: %d\n", vr);
-        g_vkFreeMemory(vk_dev, vk_mem, NULL);
-        g_vkDestroyBuffer(vk_dev, vk_buf, NULL);
-        return ZLUDA_D3D11_ERR_VULKAN_CALL;
-    }
-
-    HANDLE win32_handle = NULL;
-    VkMemoryGetWin32HandleInfoKHR handle_info = {
-        .sType      = VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR,
-        .pNext      = NULL,
-        .memory     = vk_mem,
-        .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT,
-    };
-    STEP("vkGetMemoryWin32HandleKHR");
-    vr = g_vkGetMemoryWin32HandleKHR(vk_dev, &handle_info, &win32_handle);
-    STEP("vkGetMemoryWin32HandleKHR vr=%d handle=%p", vr, win32_handle);
-    if (vr != VK_SUCCESS || !win32_handle) {
-        ERR("[ZLUDA] vkGetMemoryWin32HandleKHR failed: vr=%d handle=%p\n", vr, win32_handle);
-        g_vkFreeMemory(vk_dev, vk_mem, NULL);
-        g_vkDestroyBuffer(vk_dev, vk_buf, NULL);
-        return ZLUDA_D3D11_ERR_VULKAN_CALL;
-    }
-
-    /* Translate the NT HANDLE to the underlying Linux fd. Wine wrapped the fd
-     * inside an NT HANDLE during vkGetMemoryWin32HandleKHR; we now unwrap.
-     * After this call, BOTH the HANDLE and the fd refer to the same kernel
-     * resource — closing the HANDLE would close the fd. We dup() the fd so
-     * libcuda.so can own it independently and close the HANDLE here. */
+    /* IOCTL definition from wine/dlls/sharedgpures.sys/shared_resource.c.
+     * FILE_DEVICE_VIDEO=0x23, function=3, METHOD_BUFFERED=0, FILE_READ_DATA=0x1
+     *   CTL_CODE = (DeviceType<<16) | (Access<<14) | (Function<<2) | Method
+     *            = (0x23<<16) | (1<<14) | (3<<2) | 0
+     *            = 0x230000 | 0x4000 | 0xC | 0
+     *            = 0x23400C */
+    #define IOCTL_SHARED_GPU_RESOURCE_GET_UNIX_RESOURCE  0x23400C
     int dma_buf_fd = -1;
-    unsigned int access = 0, options = 0;
-    int rc = g_wine_server_handle_to_fd(win32_handle, 0, &dma_buf_fd, &options);
-    STEP("wine_server_handle_to_fd rc=%d fd=%d access=0x%x options=0x%x", rc, dma_buf_fd, access, options);
-    if (rc != 0 || dma_buf_fd < 0) {
-        ERR("[ZLUDA] wine_server_handle_to_fd failed: rc=%d fd=%d\n", rc, dma_buf_fd);
-        CloseHandle(win32_handle);
-        g_vkFreeMemory(vk_dev, vk_mem, NULL);
-        g_vkDestroyBuffer(vk_dev, vk_buf, NULL);
-        return ZLUDA_D3D11_ERR_VULKAN_CALL;
+    {
+        IO_STATUS_BLOCK iosb;
+        unsigned int unix_handle = 0;  /* obj_handle_t in Wine; 32-bit */
+        STEP("NtDeviceIoControlFile GET_UNIX_RESOURCE");
+        NTSTATUS st = NtDeviceIoControlFile(win32_handle, NULL, NULL, NULL, &iosb,
+                                            IOCTL_SHARED_GPU_RESOURCE_GET_UNIX_RESOURCE,
+                                            NULL, 0, &unix_handle, sizeof(unix_handle));
+        STEP("ioctl status=%lx unix_handle=0x%x", (unsigned long)st, unix_handle);
+        if (st != 0 /* STATUS_SUCCESS */) {
+            ERR("[ZLUDA] IOCTL_SHARED_GPU_RESOURCE_GET_UNIX_RESOURCE failed: 0x%lx\n", (unsigned long)st);
+            pInteropDev2->lpVtbl->FreeExternalBuffer(pInteropDev2, vk_buffer, vk_memory);
+            CloseHandle(win32_handle);
+            pInteropDev2->lpVtbl->Release(pInteropDev2);
+            return ZLUDA_D3D11_ERR_VULKAN_CALL;
+        }
+
+        /* unix_handle is an obj_handle_t (32-bit) — promote to HANDLE for
+         * wine_server_handle_to_fd. Wine's helper wine_server_ptr_handle
+         * does just `(HANDLE)(ULONG_PTR)h`. */
+        HANDLE unix_resource = (HANDLE)(uintptr_t)unix_handle;
+
+        unsigned int options = 0;
+        int          rc = g_wine_server_handle_to_fd(unix_resource, 1 /* FILE_READ_DATA */,
+                                                     &dma_buf_fd, &options);
+        STEP("wine_server_handle_to_fd rc=%d fd=%d", rc, dma_buf_fd);
+        NtClose(unix_resource);
+        if (rc != 0 || dma_buf_fd < 0) {
+            ERR("[ZLUDA] wine_server_handle_to_fd failed: rc=%d fd=%d\n", rc, dma_buf_fd);
+            pInteropDev2->lpVtbl->FreeExternalBuffer(pInteropDev2, vk_buffer, vk_memory);
+            CloseHandle(win32_handle);
+            pInteropDev2->lpVtbl->Release(pInteropDev2);
+            return ZLUDA_D3D11_ERR_VULKAN_CALL;
+        }
     }
+
+    /* dup so libcuda.so owns its own fd. wine_server_handle_to_fd may not
+     * always give us an exclusive fd; dup is cheap insurance. */
     int owned_fd = dup(dma_buf_fd);
     if (owned_fd < 0) {
         ERR("[ZLUDA] dup(fd=%d) failed: %s\n", dma_buf_fd, strerror(errno));
+        pInteropDev2->lpVtbl->FreeExternalBuffer(pInteropDev2, vk_buffer, vk_memory);
         CloseHandle(win32_handle);
-        g_vkFreeMemory(vk_dev, vk_mem, NULL);
-        g_vkDestroyBuffer(vk_dev, vk_buf, NULL);
+        pInteropDev2->lpVtbl->Release(pInteropDev2);
         return ZLUDA_D3D11_ERR_VULKAN_CALL;
     }
-    CloseHandle(win32_handle);  /* releases the kernel-side wrapped reference */
-    dma_buf_fd = owned_fd;
+    CloseHandle(win32_handle);  /* releases the wrapper kernel ref */
 
-    /* From here on the kernel-allocated dma_buf has its own refcount; we can
-     * destroy our VkBuffer + VkDeviceMemory and the fd remains valid until
-     * libcuda.so closes it (via hipDestroyExternalMemory).
-     *
-     * Keeping the VkBuffer around indefinitely just to keep the memory alive
-     * would tie up a Vulkan-side handle for every CUgraphicsResource which
-     * is unnecessary now that the dma_buf takes a reference on export. */
-    g_vkDestroyBuffer(vk_dev, vk_buf, NULL);
-    g_vkFreeMemory(vk_dev, vk_mem, NULL);
+    /* Free the VkBuffer + VkDeviceMemory now. The dma_buf has its own
+     * refcount so it stays alive until libcuda.so closes the fd. */
+    pInteropDev2->lpVtbl->FreeExternalBuffer(pInteropDev2, vk_buffer, vk_memory);
+    pInteropDev2->lpVtbl->Release(pInteropDev2);
 
-    pDesc->fd    = dma_buf_fd;
-    pDesc->size  = req.size;
+    pDesc->fd    = owned_fd;
+    pDesc->size  = actual_size;
     pDesc->pitch = (uint32_t)pitch;
 
-    TRACE("[ZLUDA] zluda_d3d11_setup_external_memory: %ux%u %u-byte fd=%d size=%llu pitch=%u\n",
+    FIXME("[ZLUDA] zluda_d3d11_setup_external_memory: %ux%u fmt=%u fd=%d size=%llu pitch=%u\n",
           pDesc->width, pDesc->height, pDesc->dxgi_format,
           pDesc->fd, (unsigned long long)pDesc->size, pDesc->pitch);
     return ZLUDA_D3D11_OK;
