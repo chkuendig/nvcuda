@@ -2066,6 +2066,10 @@ CUresult WINAPI wine_cuGraphicsGLRegisterImage(CUgraphicsResource *pCudaResource
 CUresult WINAPI wine_cuGraphicsMapResources(unsigned int count, CUgraphicsResource *resources, CUstream hStream)
 {
     TRACE("(%u, %p, %p)\n", count, resources, hStream);
+    /* Refresh imported memory with current D3D11 image contents BEFORE
+     * libcuda.so/HIP starts reading. Resources not in our table (eg GL,
+     * or unregistered) are silently skipped. */
+    zluda_d3d11_blit_on_map(count, (void**)resources);
     return pcuGraphicsMapResources(count, resources, hStream);
 }
 
@@ -2109,7 +2113,13 @@ CUresult WINAPI wine_cuGraphicsUnmapResources(unsigned int count, CUgraphicsReso
 CUresult WINAPI wine_cuGraphicsUnregisterResource(CUgraphicsResource resource)
 {
     TRACE("(%p)\n", resource);
-    return pcuGraphicsUnregisterResource(resource);
+    CUresult cu = pcuGraphicsUnregisterResource(resource);
+    /* Tear down our PE-side table entry AFTER libcuda.so has had a chance
+     * to release its imported memory; ordering only matters for log
+     * coherence, both sides are independent. No-op for non-D3D11
+     * resources. */
+    zluda_d3d11_forget_resource((void*)resource);
+    return cu;
 }
 
 CUresult WINAPI wine_cuInit(unsigned int flags)
@@ -3404,6 +3414,7 @@ CUresult WINAPI wine_cuGLMapBufferObject_v2_ptds(CUdeviceptr *dptr, size_t *size
 CUresult WINAPI wine_cuGraphicsMapResources_ptsz(unsigned int count, CUgraphicsResource *resources, CUstream hStream)
 {
     TRACE("(%u, %p, %p)\n", count, resources, hStream);
+    zluda_d3d11_blit_on_map(count, (void**)resources);
     return pcuGraphicsMapResources_ptsz(count, resources, hStream);
 }
 
@@ -6434,20 +6445,32 @@ CUresult WINAPI wine_cuGraphicsD3D11RegisterResource(CUgraphicsResource *pCudaRe
     if (pzluda_d3d11_register_imported)
     {
         ZludaD3D11ImportedDesc desc;
-        int rc = zluda_d3d11_setup_external_memory(pD3DResource, Flags, &desc);
+        ZludaD3D11Alloc        alloc;
+        int rc = zluda_d3d11_setup_external_memory(pD3DResource, Flags, &desc, &alloc);
         if (rc == ZLUDA_D3D11_OK)
         {
             CUresult cu = pzluda_d3d11_register_imported(pCudaResource, &desc);
-            if (cu != CUDA_SUCCESS)
+            if (cu == CUDA_SUCCESS)
+            {
+                /* Move alloc ownership into the PE-side resource table so
+                 * cuGraphicsMapResources can find the VkBuffer + interop
+                 * device when it needs to refresh imported memory. */
+                zluda_d3d11_remember_resource(*pCudaResource, pD3DResource,
+                                              &alloc, desc.pitch, desc.size);
+            }
+            else
             {
                 /* libcuda.so will have closed desc.fd on failure (per the
-                 * ownership-transfer contract in d3d11_interop.rs). */
+                 * ownership-transfer contract in d3d11_interop.rs). We still
+                 * own alloc — release it here. */
                 ERR("[ZLUDA] zluda_d3d11_register_imported returned %d\n", cu);
+                zluda_d3d11_release_alloc(&alloc);
             }
             return cu;
         }
         /* On unsupported/unrecognised descriptors fall through; we logged
-         * the reason inside zluda_d3d11_setup_external_memory. */
+         * the reason inside zluda_d3d11_setup_external_memory. setup_external_memory
+         * cleans up its partial state on failure. */
     }
 
     /* Fallback: forward to libcuda.so's public cuGraphicsD3D11RegisterResource.

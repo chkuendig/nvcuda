@@ -436,11 +436,13 @@ static int find_memory_type(uint32_t type_bits, VkMemoryPropertyFlags want)
 int zluda_d3d11_setup_external_memory(
     ID3D11Resource         *pD3DResource,
     unsigned                Flags,
-    ZludaD3D11ImportedDesc *pDesc)
+    ZludaD3D11ImportedDesc *pDesc,
+    ZludaD3D11Alloc        *pAlloc)
 {
-    STEP("entry pD3DResource=%p flags=%u pDesc=%p", pD3DResource, Flags, pDesc);
-    if (!pD3DResource || !pDesc) return ZLUDA_D3D11_ERR_NOT_SUPPORTED;
+    STEP("entry pD3DResource=%p flags=%u pDesc=%p pAlloc=%p", pD3DResource, Flags, pDesc, pAlloc);
+    if (!pD3DResource || !pDesc || !pAlloc) return ZLUDA_D3D11_ERR_NOT_SUPPORTED;
     memset(pDesc, 0, sizeof(*pDesc));
+    memset(pAlloc, 0, sizeof(*pAlloc));
     pDesc->fd = -1;
     pDesc->d3d_resource = pD3DResource;
     pDesc->register_flags = Flags;
@@ -616,10 +618,16 @@ int zluda_d3d11_setup_external_memory(
     }
     CloseHandle(win32_handle);  /* releases the wrapper kernel ref */
 
-    /* Free the VkBuffer + VkDeviceMemory now. The dma_buf has its own
-     * refcount so it stays alive until libcuda.so closes the fd. */
-    pInteropDev2->lpVtbl->FreeExternalBuffer(pInteropDev2, vk_buffer, vk_memory);
-    pInteropDev2->lpVtbl->Release(pInteropDev2);
+    /* DO NOT free vk_buffer/vk_memory here. They live on through the
+     * resource lifetime so cuGraphicsMapResources can blit the current
+     * D3D11 image contents into the same memory the imported HIP pointer
+     * sees. The caller must move ownership into the table via
+     * zluda_d3d11_remember_resource (or release on error via
+     * zluda_d3d11_release_alloc). pInteropDev2's refcount also stays
+     * AddRef'd; same ownership semantics. */
+    pAlloc->interop_device = pInteropDev2;
+    pAlloc->vk_buffer      = vk_buffer;
+    pAlloc->vk_memory      = vk_memory;
 
     pDesc->fd    = owned_fd;
     pDesc->size  = actual_size;
@@ -629,4 +637,129 @@ int zluda_d3d11_setup_external_memory(
           pDesc->width, pDesc->height, pDesc->dxgi_format,
           pDesc->fd, (unsigned long long)pDesc->size, pDesc->pitch);
     return ZLUDA_D3D11_OK;
+}
+
+void zluda_d3d11_release_alloc(ZludaD3D11Alloc *pAlloc)
+{
+    if (!pAlloc) return;
+    IDXGIVkInteropDevice *dev = (IDXGIVkInteropDevice*)pAlloc->interop_device;
+    if (dev) {
+        if (pAlloc->vk_buffer || pAlloc->vk_memory)
+            dev->lpVtbl->FreeExternalBuffer(dev, pAlloc->vk_buffer, pAlloc->vk_memory);
+        dev->lpVtbl->Release(dev);
+    }
+    memset(pAlloc, 0, sizeof(*pAlloc));
+}
+
+/* ============================================================================
+ * Resource table — keyed by CUgraphicsResource (opaque pointer Rust side
+ * returned). Linear scan; Batman observed to keep ~12 simultaneous live
+ * resources max so this is fine.
+ * ========================================================================== */
+
+#include <pthread.h>
+
+typedef struct ZludaTrackedRes {
+    void                 *cuda_resource;   /* opaque key from Rust */
+    ID3D11Resource       *d3d_resource;    /* AddRef'd */
+    IDXGIVkInteropDevice *interop_device;  /* AddRef'd, IDXGIVkInteropDevice2 vtable */
+    uint64_t              vk_buffer;
+    uint64_t              vk_memory;
+    uint64_t              size;
+    uint32_t              pitch;
+} ZludaTrackedRes;
+
+#define ZLUDA_MAX_TRACKED 64
+static ZludaTrackedRes g_tracked[ZLUDA_MAX_TRACKED];
+static unsigned        g_tracked_used = 0;
+static pthread_mutex_t g_tracked_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static ZludaTrackedRes *find_tracked_locked(void *cuda_res)
+{
+    for (unsigned i = 0; i < g_tracked_used; i++)
+        if (g_tracked[i].cuda_resource == cuda_res)
+            return &g_tracked[i];
+    return NULL;
+}
+
+void zluda_d3d11_remember_resource(
+    void                  *cuda_resource,
+    ID3D11Resource        *d3d_resource,
+    const ZludaD3D11Alloc *pAlloc,
+    uint32_t               pitch,
+    uint64_t               size)
+{
+    if (!cuda_resource || !d3d_resource || !pAlloc) return;
+    pthread_mutex_lock(&g_tracked_lock);
+    if (g_tracked_used >= ZLUDA_MAX_TRACKED) {
+        pthread_mutex_unlock(&g_tracked_lock);
+        ERR("[ZLUDA] resource table full (%u entries) — leaking VkBuffer/VkMemory\n",
+            g_tracked_used);
+        return;
+    }
+    /* AddRef d3d_resource so it stays alive for our QI(IDXGIVkInteropSurface)
+     * at Map time. interop_device's refcount transfers in directly. */
+    ID3D11Resource_AddRef(d3d_resource);
+    ZludaTrackedRes *slot = &g_tracked[g_tracked_used++];
+    slot->cuda_resource  = cuda_resource;
+    slot->d3d_resource   = d3d_resource;
+    slot->interop_device = (IDXGIVkInteropDevice*)pAlloc->interop_device;
+    slot->vk_buffer      = pAlloc->vk_buffer;
+    slot->vk_memory      = pAlloc->vk_memory;
+    slot->size           = size;
+    slot->pitch          = pitch;
+    pthread_mutex_unlock(&g_tracked_lock);
+}
+
+void zluda_d3d11_blit_on_map(unsigned int count, void **cuda_resources)
+{
+    if (!count || !cuda_resources) return;
+    pthread_mutex_lock(&g_tracked_lock);
+    for (unsigned int i = 0; i < count; i++) {
+        ZludaTrackedRes *slot = find_tracked_locked(cuda_resources[i]);
+        if (!slot) continue;  /* not ours; skip silently */
+
+        /* QI source D3D11 resource for IDXGIVkInteropSurface */
+        IDXGIVkInteropSurface *pSurf = NULL;
+        if (FAILED(ID3D11Resource_QueryInterface(slot->d3d_resource,
+                &IID_IDXGIVkInteropSurface, (void**)&pSurf))) {
+            ERR("[ZLUDA] map blit: QI(IDXGIVkInteropSurface) failed for cuda_res=%p\n",
+                cuda_resources[i]);
+            continue;
+        }
+        HRESULT hr = slot->interop_device->lpVtbl->CopySurfaceToExternalBuffer(
+            slot->interop_device, pSurf, slot->vk_buffer, slot->size, slot->pitch);
+        pSurf->lpVtbl->Release(pSurf);
+        if (FAILED(hr)) {
+            ERR("[ZLUDA] map blit: CopySurfaceToExternalBuffer hr=0x%lx for cuda_res=%p\n",
+                (unsigned long)hr, cuda_resources[i]);
+        }
+    }
+    pthread_mutex_unlock(&g_tracked_lock);
+}
+
+void zluda_d3d11_forget_resource(void *cuda_resource)
+{
+    if (!cuda_resource) return;
+    pthread_mutex_lock(&g_tracked_lock);
+    ZludaTrackedRes *slot = find_tracked_locked(cuda_resource);
+    if (!slot) {
+        pthread_mutex_unlock(&g_tracked_lock);
+        return;
+    }
+    /* Release our refs. Local copies because we'll compact below. */
+    ID3D11Resource       *d3d = slot->d3d_resource;
+    IDXGIVkInteropDevice *dev = slot->interop_device;
+    uint64_t              buf = slot->vk_buffer;
+    uint64_t              mem = slot->vk_memory;
+    /* Compact: move last into this slot. */
+    *slot = g_tracked[g_tracked_used - 1];
+    g_tracked_used--;
+    pthread_mutex_unlock(&g_tracked_lock);
+
+    if (dev) {
+        dev->lpVtbl->FreeExternalBuffer(dev, buf, mem);
+        dev->lpVtbl->Release(dev);
+    }
+    if (d3d) ID3D11Resource_Release(d3d);
 }
