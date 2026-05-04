@@ -1,0 +1,73 @@
+/*
+ * D3D11 → ZLUDA texture interop helper.
+ *
+ * Defines a self-contained API used by wine_cuGraphicsD3D11RegisterResource
+ * to do the Windows-COM (DXVK IDXGIVkInterop*) + Vulkan FFI dance needed to
+ * convert an ID3D11Texture2D into a dma_buf fd that the Linux libcuda.so
+ * (ZLUDA) can hipImportExternalMemory.
+ *
+ * All the heavy lifting (vkCreateBuffer, vkAllocateMemory with
+ * ExportMemoryAllocateInfo, vkGetMemoryFdKHR, etc.) lives here so nvcuda.c
+ * stays focused on its CUDA-relay role.
+ *
+ * Errors return < 0; zero means success and *pDesc->fd / handles are valid
+ * and ownership of the fd has transferred to the caller.
+ */
+
+#ifndef __ZLUDA_NVCUDA_D3D11_INTEROP_H
+#define __ZLUDA_NVCUDA_D3D11_INTEROP_H
+
+#include <stdint.h>
+#include "windef.h"
+#include "d3d11.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* This struct's layout MUST match `ZludaD3D11ImportedDesc` in
+ * zluda/zluda/src/impl/d3d11_interop.rs. */
+typedef struct ZludaD3D11ImportedDesc {
+    int      fd;             /* dma_buf fd; ownership transfers to libcuda.so */
+    uint64_t size;           /* allocation size in bytes (Vulkan reqs.size) */
+    uint32_t width;          /* texture width in texels */
+    uint32_t height;         /* texture height in texels */
+    uint32_t pitch;          /* row pitch in bytes */
+    uint32_t dxgi_format;    /* DXGI_FORMAT enum (== 2 / R32G32B32A32_FLOAT) */
+    uint32_t register_flags; /* CUgraphicsRegisterFlags (== 0) */
+    uint32_t bind_flags;     /* D3D11_BIND_FLAG bitfield (diagnostics) */
+    void    *d3d_resource;   /* original ID3D11Resource* (diagnostics) */
+} ZludaD3D11ImportedDesc;
+
+/* Result codes for zluda_d3d11_setup_external_memory. */
+#define ZLUDA_D3D11_OK                       0
+#define ZLUDA_D3D11_ERR_DXVK_INTEROP_MISSING -1   /* QueryInterface failed (no DXVK) */
+#define ZLUDA_D3D11_ERR_NOT_SUPPORTED        -2   /* descriptor mismatch (logged) */
+#define ZLUDA_D3D11_ERR_VULKAN_LOAD          -3   /* libvulkan.so.1 not found */
+#define ZLUDA_D3D11_ERR_VULKAN_CALL          -4   /* a Vulkan API returned non-success */
+#define ZLUDA_D3D11_ERR_NO_MEMORY_TYPE       -5   /* no exportable memory type matched */
+
+/* Inspect pD3DResource (a Tex2D), allocate a parallel LINEAR-tiled VkBuffer
+ * with VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT, get the fd via
+ * vkGetMemoryFdKHR, and fill *pDesc.
+ *
+ * On success, the caller owns pDesc->fd and must either (a) close() it OR
+ * (b) hand it to libcuda.so via zluda_d3d11_register_imported (which takes
+ * ownership). Either way, do not call this function and then drop the fd.
+ *
+ * For now, supports ONLY Tex2D R32G32B32A32_FLOAT mips=1 — the canonical
+ * descriptor observed from Batman: Arkham Knight (see
+ * project_d3d11_p0_resource_descriptor.md). Returns
+ * ZLUDA_D3D11_ERR_NOT_SUPPORTED otherwise after logging the unexpected
+ * descriptor at FIXME level.
+ */
+int zluda_d3d11_setup_external_memory(
+    ID3D11Resource         *pD3DResource,
+    unsigned                Flags,           /* CUgraphicsRegisterFlags */
+    ZludaD3D11ImportedDesc *pDesc);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* __ZLUDA_NVCUDA_D3D11_INTEROP_H */

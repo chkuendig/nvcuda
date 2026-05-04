@@ -37,12 +37,11 @@
 #include "cuda.h"
 #include "nvcuda.h"
 /* COBJMACROS gives us the C-style ID3D11Buffer_GetDesc(p, &d) helper macros
- * (otherwise we'd have to write p->lpVtbl->GetDesc(p, &d)). INITGUID makes
- * the DEFINE_GUID() macros in d3d11.h emit actual symbol definitions
- * (IID_ID3D11Buffer, IID_ID3D11Texture2D, ...) instead of just declarations.
- * Both used by the cuGraphicsD3D11RegisterResource probe below. */
+ * (otherwise we'd have to write p->lpVtbl->GetDesc(p, &d)). The actual GUID
+ * symbol definitions (IID_ID3D11Buffer, IID_ID3D11Texture2D, ...) live in
+ * d3d11_interop.c — that translation unit includes initguid.h. Including
+ * initguid.h here too would produce duplicate-symbol link errors. */
 #define COBJMACROS
-#include "initguid.h"
 #include "d3d9.h"
 #include "d3d11.h"
 #include "function_mappings.h"
@@ -871,6 +870,13 @@ static CUresult (*pcuDriverGetGpuCodeIsaVersion)(void* param0, void* param1);
 static CUresult (*pcuGraphicsD3D11RegisterResource)(CUgraphicsResource *pCudaResource,
     void *pD3DResource, unsigned int Flags);
 
+/* ZLUDA D3D11 imported-resource fast path — exported by libcuda.so (Rust side
+ * in zluda/src/impl/d3d11_interop.rs). Called after we have set up a dma_buf
+ * fd via Vulkan; the Rust side then hipImportExternalMemory's the fd. */
+#include "d3d11_interop.h"
+static CUresult (*pzluda_d3d11_register_imported)(CUgraphicsResource *pCudaResource,
+    const ZludaD3D11ImportedDesc *pDesc);
+
 static void *cuda_handle = NULL;
 
 static BOOL load_functions(void)
@@ -1580,6 +1586,11 @@ static BOOL load_functions(void)
     TRY_LOAD_FUNCPTR(cuLaunchHostFunc_v2);
     TRY_LOAD_FUNCPTR(cuLaunchHostFunc_v2);
     TRY_LOAD_FUNCPTR(cuGraphicsD3D11RegisterResource);
+    /* ZLUDA private symbol; absent from upstream NVIDIA libcuda.so, so use
+     * the lenient TRY_ macro — falls back to forwarding through the public
+     * cuGraphicsD3D11RegisterResource (which currently returns NOT_SUPPORTED)
+     * if libcuda.so doesn't have it. */
+    TRY_LOAD_FUNCPTR(zluda_d3d11_register_imported);
 
     #undef LOAD_FUNCPTR
     #undef TRY_LOAD_FUNCPTR
@@ -6417,9 +6428,31 @@ CUresult WINAPI wine_cuGraphicsD3D11RegisterResource(CUgraphicsResource *pCudaRe
               pCudaResource, Flags);
     }
 
-    /* Forward to libcuda.so. The Rust side currently returns NOT_SUPPORTED until
-     * the real implementation lands; this is intentional so the P0 logs above
-     * are not contaminated by a spurious-success codepath. */
+    /* Fast path: if this is the canonical Tex2D R32G32B32A32_FLOAT mips=1
+     * descriptor (see project_d3d11_p0_resource_descriptor.md), set up a
+     * dma_buf via DXVK + Vulkan and hand the fd to libcuda.so. */
+    if (pzluda_d3d11_register_imported)
+    {
+        ZludaD3D11ImportedDesc desc;
+        int rc = zluda_d3d11_setup_external_memory(pD3DResource, Flags, &desc);
+        if (rc == ZLUDA_D3D11_OK)
+        {
+            CUresult cu = pzluda_d3d11_register_imported(pCudaResource, &desc);
+            if (cu != CUDA_SUCCESS)
+            {
+                /* libcuda.so will have closed desc.fd on failure (per the
+                 * ownership-transfer contract in d3d11_interop.rs). */
+                ERR("[ZLUDA] zluda_d3d11_register_imported returned %d\n", cu);
+            }
+            return cu;
+        }
+        /* On unsupported/unrecognised descriptors fall through; we logged
+         * the reason inside zluda_d3d11_setup_external_memory. */
+    }
+
+    /* Fallback: forward to libcuda.so's public cuGraphicsD3D11RegisterResource.
+     * The Rust side returns NOT_SUPPORTED here so callers get a clear error
+     * (vs the dummy hipMalloc-success behaviour that lived here pre-fix). */
     if (pcuGraphicsD3D11RegisterResource)
         return pcuGraphicsD3D11RegisterResource(pCudaResource, pD3DResource, Flags);
 
