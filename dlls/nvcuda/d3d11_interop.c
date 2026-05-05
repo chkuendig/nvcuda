@@ -243,6 +243,9 @@ typedef struct IDXGIVkInteropDeviceVtbl {
         IDXGIVkInteropSurface* pSrc, uint64_t Dst, uint64_t DstSize, unsigned int DstRowPitch);
     void    (STDMETHODCALLTYPE *FreeExternalBuffer)(IDXGIVkInteropDevice*,
         uint64_t Buffer, uint64_t Memory);
+    HRESULT (STDMETHODCALLTYPE *CopyExternalBufferToSurface)(IDXGIVkInteropDevice*,
+        uint64_t Src, uint64_t SrcSize, unsigned int SrcRowPitch,
+        IDXGIVkInteropSurface* pDst);
 } IDXGIVkInteropDeviceVtbl;
 struct IDXGIVkInteropDevice { const IDXGIVkInteropDeviceVtbl *lpVtbl; };
 
@@ -711,9 +714,26 @@ void zluda_d3d11_remember_resource(
     pthread_mutex_unlock(&g_tracked_lock);
 }
 
+/* Append a single line to /tmp/zluda_tex.log — same file the Rust side
+ * writes via zluda_log_err. WINEDEBUG=-all in Batman's protonfix suppresses
+ * Wine FIXME/ERR macros entirely, so we can't rely on them; this writes
+ * directly via stdio. fopen(append) is atomic up to PIPE_BUF on Linux so
+ * concurrent appends from Rust + this PE-side writer don't tear lines. */
+static void zluda_d3d11_log(const char *fmt, ...)
+{
+    FILE *f = fopen("/tmp/zluda_tex.log", "a");
+    if (!f) return;
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(f, fmt, ap);
+    va_end(ap);
+    fclose(f);
+}
+
 void zluda_d3d11_blit_on_map(unsigned int count, void **cuda_resources)
 {
     if (!count || !cuda_resources) return;
+    static int first_ok_logged = 0;
     pthread_mutex_lock(&g_tracked_lock);
     for (unsigned int i = 0; i < count; i++) {
         ZludaTrackedRes *slot = find_tracked_locked(cuda_resources[i]);
@@ -723,16 +743,51 @@ void zluda_d3d11_blit_on_map(unsigned int count, void **cuda_resources)
         IDXGIVkInteropSurface *pSurf = NULL;
         if (FAILED(ID3D11Resource_QueryInterface(slot->d3d_resource,
                 &IID_IDXGIVkInteropSurface, (void**)&pSurf))) {
-            ERR("[ZLUDA] map blit: QI(IDXGIVkInteropSurface) failed for cuda_res=%p\n",
-                cuda_resources[i]);
+            zluda_d3d11_log("[ZLUDA] map blit: QI(IDXGIVkInteropSurface) failed for cuda_res=%p\n",
+                            cuda_resources[i]);
             continue;
         }
         HRESULT hr = slot->interop_device->lpVtbl->CopySurfaceToExternalBuffer(
             slot->interop_device, pSurf, slot->vk_buffer, slot->size, slot->pitch);
         pSurf->lpVtbl->Release(pSurf);
         if (FAILED(hr)) {
-            ERR("[ZLUDA] map blit: CopySurfaceToExternalBuffer hr=0x%lx for cuda_res=%p\n",
-                (unsigned long)hr, cuda_resources[i]);
+            zluda_d3d11_log("[ZLUDA] map blit: CopySurfaceToExternalBuffer hr=0x%lx for cuda_res=%p\n",
+                            (unsigned long)hr, cuda_resources[i]);
+        } else if (!first_ok_logged) {
+            zluda_d3d11_log("[ZLUDA] map blit: first A->B copy OK cuda_res=%p size=%llu pitch=%u\n",
+                            cuda_resources[i], (unsigned long long)slot->size, slot->pitch);
+            first_ok_logged = 1;
+        }
+    }
+    pthread_mutex_unlock(&g_tracked_lock);
+}
+
+void zluda_d3d11_blit_on_unmap(unsigned int count, void **cuda_resources)
+{
+    if (!count || !cuda_resources) return;
+    static int first_ok_logged = 0;
+    pthread_mutex_lock(&g_tracked_lock);
+    for (unsigned int i = 0; i < count; i++) {
+        ZludaTrackedRes *slot = find_tracked_locked(cuda_resources[i]);
+        if (!slot) continue;
+
+        IDXGIVkInteropSurface *pSurf = NULL;
+        if (FAILED(ID3D11Resource_QueryInterface(slot->d3d_resource,
+                &IID_IDXGIVkInteropSurface, (void**)&pSurf))) {
+            zluda_d3d11_log("[ZLUDA] unmap blit: QI(IDXGIVkInteropSurface) failed for cuda_res=%p\n",
+                            cuda_resources[i]);
+            continue;
+        }
+        HRESULT hr = slot->interop_device->lpVtbl->CopyExternalBufferToSurface(
+            slot->interop_device, slot->vk_buffer, slot->size, slot->pitch, pSurf);
+        pSurf->lpVtbl->Release(pSurf);
+        if (FAILED(hr)) {
+            zluda_d3d11_log("[ZLUDA] unmap blit: CopyExternalBufferToSurface hr=0x%lx for cuda_res=%p\n",
+                            (unsigned long)hr, cuda_resources[i]);
+        } else if (!first_ok_logged) {
+            zluda_d3d11_log("[ZLUDA] unmap blit: first B->A copy OK cuda_res=%p size=%llu pitch=%u\n",
+                            cuda_resources[i], (unsigned long long)slot->size, slot->pitch);
+            first_ok_logged = 1;
         }
     }
     pthread_mutex_unlock(&g_tracked_lock);

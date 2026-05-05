@@ -108,6 +108,14 @@ void zluda_d3d11_remember_resource(
  * path) are silently skipped. */
 void zluda_d3d11_blit_on_map(unsigned int count, void **cuda_resources);
 
+/* Iterate `cuda_resources[0..count]`. For each entry that's in our table,
+ * run IDXGIVkInteropDevice2::CopyExternalBufferToSurface to propagate
+ * CUDA-written contents of the imported memory back into DXVK's image so
+ * subsequent D3D11 sampling sees the new data. Resources not in the
+ * table are silently skipped. Called from wine_cuGraphicsUnmapResources
+ * BEFORE forwarding to libcuda.so. */
+void zluda_d3d11_blit_on_unmap(unsigned int count, void **cuda_resources);
+
 /* Remove cuda_resource from the table and release its alloc + d3d_resource.
  * Called from wine_cuGraphicsUnregisterResource. No-op for resources we
  * don't own (eg GL). */

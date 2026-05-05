@@ -2107,6 +2107,10 @@ CUresult WINAPI wine_cuGraphicsSubResourceGetMappedArray(CUarray *pArray, CUgrap
 CUresult WINAPI wine_cuGraphicsUnmapResources(unsigned int count, CUgraphicsResource *resources, CUstream hStream)
 {
     TRACE("(%u, %p, %p)\n", count, resources, hStream);
+    /* Propagate CUDA-written buffer contents back into DXVK's image BEFORE
+     * libcuda.so finalises the unmap, so the next D3D11 sample sees the
+     * new data. Resources not in our table (eg GL) are silently skipped. */
+    zluda_d3d11_blit_on_unmap(count, (void**)resources);
     return pcuGraphicsUnmapResources(count, resources, hStream);
 }
 
@@ -3421,6 +3425,7 @@ CUresult WINAPI wine_cuGraphicsMapResources_ptsz(unsigned int count, CUgraphicsR
 CUresult WINAPI wine_cuGraphicsUnmapResources_ptsz(unsigned int count, CUgraphicsResource *resources, CUstream hStream)
 {
     TRACE("(%u, %p, %p)\n", count, resources, hStream);
+    zluda_d3d11_blit_on_unmap(count, (void**)resources);
     return pcuGraphicsUnmapResources_ptsz(count, resources, hStream);
 }
 
