@@ -409,6 +409,22 @@ static int load_vulkan_fns(VkInstance inst, VkPhysicalDevice phys, VkDevice dev)
     STEP2("calling vkGetPhysicalDeviceMemoryProperties(%p, %p)", (void*)(uintptr_t)phys, &g_vk_mem_props);
     g_vkGetPhysicalDeviceMemoryProperties(phys, &g_vk_mem_props);
     STEP2("memProps OK typeCount=%u heapCount=%u", g_vk_mem_props.memoryTypeCount, g_vk_mem_props.memoryHeapCount);
+
+    /* Report the largest DEVICE_LOCAL heap to the Rust side so
+     * cuDeviceTotalMem can return a value consistent with DXVK. */
+    {
+        uint64_t max_device_local = 0;
+        for (uint32_t i = 0; i < g_vk_mem_props.memoryHeapCount; ++i) {
+            if ((g_vk_mem_props.memoryHeaps[i].flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
+                && g_vk_mem_props.memoryHeaps[i].size > max_device_local)
+                max_device_local = g_vk_mem_props.memoryHeaps[i].size;
+        }
+        if (max_device_local > 0) {
+            extern void __attribute__((ms_abi)) zluda_set_vk_device_local_heap_size(uint64_t);
+            STEP2("reporting Vk device-local heap %u MiB to ZLUDA", (unsigned)(max_device_local >> 20));
+            zluda_set_vk_device_local_heap_size(max_device_local);
+        }
+    }
     return 0;
 }
 
