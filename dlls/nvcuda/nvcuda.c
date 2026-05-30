@@ -1823,13 +1823,22 @@ CUresult WINAPI wine_cuDeviceGetAttribute(int *pi, CUdevice_attribute attrib, CU
 {
     CUresult ret = pcuDeviceGetAttribute(pi, attrib, dev);
     if(ret != CUDA_SUCCESS) {
-        /* Batman: Arkham Knight's PhysX hardware-detection (cudart64_42_9.dll)
-         * probes a non-standard attribute id (0x2008C202 = 537396226). NVIDIA's
-         * real driver also returns INVALID_VALUE for it, but PhysX seems to
-         * treat any non-SUCCESS as "GPU not viable" and disables the in-game
-         * PhysX option. Mimic an older-driver tolerant behaviour: write 0 and
-         * report success for unknown attribute ids. The TRACE remains so we
-         * can still see which attributes are being probed. */
+        /* PhysXDevice64.dll's exported `physxDevGetCudaOrdinal` calls
+         * cuDeviceGetAttribute with a NVIDIA-private attribute id `0x20080402`
+         * (high bit `0x20000000` flags "internal namespace"; lower bits select
+         * a sub-attribute). It is NOT in any public cuda.h enum. The query
+         * returns the NVIDIA-driver-side adapter-handle for the device, so
+         * PhysX can correlate a CUDA ordinal with the GPU the user picked in
+         * the NVIDIA Control Panel's PhysX Configuration page. ROCm/HIP has no
+         * equivalent and returns INVALID_VALUE; PhysX-on-Batman then takes its
+         * error branch and the in-game GPU-PhysX option ends up greyed out.
+         *
+         * Mimic an older-driver tolerant behaviour: substitute *pi=0 / SUCCESS
+         * for unknown attribute ids. PhysXDevice's loop then matches our
+         * device (the only one we expose) against its all-zero "target" (the
+         * target-builder also fails on AMD) and returns ordinal 0. See
+         * proton-ge-custom/docs/troubleshooting.md for the full decoded call
+         * site + references. */
         FIXME("Attribute: %d (0x%x), libcuda returned error: %d -- substituting *pi=0 SUCCESS\n",
               attrib, attrib, ret);
         if (pi) *pi = 0;
