@@ -1822,8 +1822,20 @@ CUresult WINAPI wine_cuDeviceGet(CUdevice *device, int ordinal)
 CUresult WINAPI wine_cuDeviceGetAttribute(int *pi, CUdevice_attribute attrib, CUdevice dev)
 {
     CUresult ret = pcuDeviceGetAttribute(pi, attrib, dev);
-    if(ret != CUDA_SUCCESS) TRACE("Attribute: %d, Returned error: %d\n", attrib, ret);
-    else TRACE("(Device: %d, Attribute: %d) Value: (%d)\n", dev, attrib, *pi);
+    if(ret != CUDA_SUCCESS) {
+        /* Batman: Arkham Knight's PhysX hardware-detection (cudart64_42_9.dll)
+         * probes a non-standard attribute id (0x2008C202 = 537396226). NVIDIA's
+         * real driver also returns INVALID_VALUE for it, but PhysX seems to
+         * treat any non-SUCCESS as "GPU not viable" and disables the in-game
+         * PhysX option. Mimic an older-driver tolerant behaviour: write 0 and
+         * report success for unknown attribute ids. The TRACE remains so we
+         * can still see which attributes are being probed. */
+        FIXME("Attribute: %d (0x%x), libcuda returned error: %d -- substituting *pi=0 SUCCESS\n",
+              attrib, attrib, ret);
+        if (pi) *pi = 0;
+        return CUDA_SUCCESS;
+    }
+    TRACE("(Device: %d, Attribute: %d) Value: (%d)\n", dev, attrib, *pi);
     return ret;
 }
 
