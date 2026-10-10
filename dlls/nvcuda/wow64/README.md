@@ -11,8 +11,9 @@ library in the same process. There is no RPC server. Arguments cross this
 boundary as fixed-width words. CUDA context, module and function handles are
 tokens, not truncated native pointers.
 
-The backend loads the absolute library named by `ZLUDA_WOW64_LIBRARY`. That
-variable selects ZLUDA; it does not enable Wine WoW64. The launcher must also
+The backend loads ZLUDA's `libcuda.so` from its own directory (the compat
+tool installs both in `files/lib/wine/x86_64-unix`); an absolute path in
+`ZLUDA_WOW64_LIBRARY` overrides that. Neither enables Wine WoW64. The launcher must also
 enable Wine's new WoW64 mode, with the matching PE and Unix nvcuda modules
 installed in a disposable runtime. GE11 supports `PROTON_USE_WOW64=1`, which
 sets `WINEARCH=wow64`; the direct-Wine test sets the latter.

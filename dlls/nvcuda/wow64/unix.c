@@ -3,6 +3,7 @@
  * contexts/streams, bounded module globals and linear textures. Reuses ZLUDA's
  * upstream 32-bit compiler and appends its required hidden pool-base argument.
  */
+#define _GNU_SOURCE /* dladdr */
 #include <dlfcn.h>
 #include <pthread.h>
 #include <stdint.h>
@@ -157,8 +158,20 @@ static int fatbin_has_ptx(const void *data)
 static int load_backend(void)
 {
     if (library) return 0;
+    /* ZLUDA's libcuda.so sits next to this library in the compat tool
+     * (files/lib/wine/x86_64-unix); ZLUDA_WOW64_LIBRARY overrides it. */
+    char own[4096];
     const char *path = getenv("ZLUDA_WOW64_LIBRARY");
-    if (!path || path[0] != '/') return UNSUPPORTED;
+    if (!path || !path[0]) {
+        Dl_info info;
+        const char *slash;
+        if (!dladdr((void *)load_backend, &info) || !info.dli_fname ||
+            !(slash = strrchr(info.dli_fname, '/')) ||
+            snprintf(own, sizeof(own), "%.*s/libcuda.so", (int)(slash - info.dli_fname),
+                     info.dli_fname) >= (int)sizeof(own)) return UNSUPPORTED;
+        path = own;
+    }
+    if (path[0] != '/') return UNSUPPORTED;
     void *lib = dlopen(path, RTLD_NOW | RTLD_LOCAL);
     if (!lib) { fprintf(stderr, "cuda32: dlopen: %s\n", dlerror()); return UNSUPPORTED; }
 #define LOAD(name) do { *(void **)(&p_##name) = dlsym(lib, #name); \
