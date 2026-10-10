@@ -38,7 +38,9 @@
 #include "ntstatus.h"
 #include "wine/debug.h"
 #include "wine/list.h"
-#include "wine/server.h"
+/* No server requests are sent here. Avoid coupling the relay to Wine's
+ * generated server protocol just for an fd helper and a 32-bit handle. */
+NTSYSAPI NTSTATUS CDECL wine_server_handle_to_fd(HANDLE, unsigned int, int *, unsigned int *);
 #include "cuda.h"
 #include "nvcuda.h"
 #include "encryption.h"
@@ -101,7 +103,7 @@ void cuda_process_tls_callbacks(DWORD reason)
 HANDLE get_shared_resource_kmt_handle(HANDLE shared_resource)
 {
     IO_STATUS_BLOCK iosb;
-    obj_handle_t kmt_handle;
+    unsigned int kmt_handle;
 
     if (NtDeviceIoControlFile(shared_resource, NULL, NULL, NULL, &iosb, IOCTL_SHARED_GPU_RESOURCE_GETKMT,
             NULL, 0, &kmt_handle, sizeof(kmt_handle)))
@@ -110,13 +112,13 @@ HANDLE get_shared_resource_kmt_handle(HANDLE shared_resource)
         return INVALID_HANDLE_VALUE;
     }
 
-    return wine_server_ptr_handle(kmt_handle);
+    return (HANDLE)(INT_PTR)(int)kmt_handle;
 }
 
 int get_shared_resource_fd(HANDLE win32_handle)
 {
     IO_STATUS_BLOCK iosb;
-    obj_handle_t unix_resource;
+    unsigned int unix_resource;
     NTSTATUS status;
     int unix_fd = -1;
     HANDLE new_handle = NULL;
@@ -134,13 +136,13 @@ int get_shared_resource_fd(HANDLE win32_handle)
         return -1;
     }
 
-    status = wine_server_handle_to_fd(wine_server_ptr_handle(unix_resource), FILE_READ_DATA, &unix_fd, NULL);
+    status = wine_server_handle_to_fd((HANDLE)(INT_PTR)(int)unix_resource, FILE_READ_DATA, &unix_fd, NULL);
     if (status != STATUS_SUCCESS || unix_fd < 0)
     {
         ERR("Failed to convert Unix resource to FD for handle %p - Status: 0x%x\n", win32_handle, status);
         return -1;
     }
-    NtClose(wine_server_ptr_handle(unix_resource));
+    NtClose((HANDLE)(INT_PTR)(int)unix_resource);
 
     return unix_fd;
 }
