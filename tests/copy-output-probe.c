@@ -28,17 +28,35 @@ int main(int argc,char **argv)
     probe_poll();
     if(!strcmp(argv[1],"disabled")) { assert(probe_dir==-1); puts("PASS disabled"); return 0; }
     assert(probe_dir>=0);
+    assert(probe_readback_enabled==!strcmp(argv[1],"readback"));
     assert(!probe_start_ns); /* Directory alone cannot arm. */
     int fd=openat(probe_dir,"arm",O_WRONLY|O_CREAT|O_EXCL,0600);assert(fd>=0);assert(!close(fd));
     probe_next_poll_ns=0;
     pthread_t threads[32];
     for(unsigned i=0;i<32;i++)assert(!pthread_create(&threads[i],NULL,arm_worker,NULL));
     for(unsigned i=0;i<32;i++)assert(!pthread_join(threads[i],NULL));
-    assert(probe_start_ns); unsigned long long armed=probe_start_ns;
+    assert(probe_start_ns && !probe_readback_start_ns); unsigned long long armed=probe_start_ns;
+    if(!strcmp(argv[1],"readback")) {
+        fd=openat(probe_dir,"readback-arm",O_WRONLY|O_CREAT|O_EXCL,0600);assert(fd>=0);assert(!close(fd));
+        probe_next_poll_ns=0;probe_poll();
+        assert(probe_readback_start_ns && probe_start_ns==armed);
+    }
     probe_next_poll_ns=0;probe_poll();assert(probe_start_ns==armed);
     probe_observe(&t,(void*)2,1,0,&records);assert(records && records->payload);
     assert(records->channels[0].finite==4 && records->channels[0].nonzero==2);
     assert(records->channels[2].nan_count==1 && records->channels[2].inf_count==1);
+    if(!strcmp(argv[1],"readback")) {
+        unsigned char rows[2][48];memset(rows,0xa5,sizeof(rows));
+        for(unsigned y=0;y<2;y++)memcpy(rows[y],(char*)pixels+y*32,32);
+        records->readback_attempted=1;
+        probe_compare_readback(records,rows,48,pixels);
+        assert(!records->readback_result && !records->readback_mismatches && records->readback_hash==records->hash);
+        CopyProbeRecord changed={.width=2,.height=2}; rows[1][7]^=1;
+        probe_compare_readback(&changed,rows,48,pixels);assert(changed.readback_mismatches==1 && changed.readback_hash!=records->hash);
+        assert(changed.readback_first_byte==39 && changed.readback_actual==(changed.readback_expected^1));
+        CopyProbeRecord invalid={.width=2,.height=2};
+        probe_compare_readback(&invalid,rows,31,pixels);assert(invalid.readback_result<0 && !invalid.readback_hash);
+    }
     probe_observe(&t,(void*)2,1,0,&records);assert(probe_records==1); /* Throttle. */
     probe_flush(records);records=NULL;
     t.probe_last_ns=0;probe_observe(&t,NULL,0,999,&records);assert(records && !records->payload && !records->channels[0].finite);

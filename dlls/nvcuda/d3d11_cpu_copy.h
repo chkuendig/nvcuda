@@ -18,6 +18,7 @@ typedef struct ZludaCpuTexture {
     BOOL mapped;
     unsigned long long probe_id, map_epoch, probe_last_ns, probe_payload_ns;
     unsigned probe_payloads;
+    BOOL probe_readback_done;
 } ZludaCpuTexture;
 static ZludaCpuTexture *cpu_textures;
 static pthread_mutex_t cpu_textures_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -129,6 +130,7 @@ static CUresult cpu_transfer(ZludaCpuTexture *t, BOOL to_cuda, CUstream stream, 
     CUDA_MEMCPY2D copy={0};
     HRESULT hr;
     CUresult result;
+    CopyProbeRecord *record=NULL;
     unsigned y;
     ID3D10Multithread_Enter(t->multithread);
     if(to_cuda) ID3D11DeviceContext_CopyResource(t->context,(ID3D11Resource*)t->staging,(ID3D11Resource*)t->texture);
@@ -142,10 +144,25 @@ static CUresult cpu_transfer(ZludaCpuTexture *t, BOOL to_cuda, CUstream stream, 
     }
     else { copy.srcArray=t->array; copy.dstHost=t->pixels; copy.dstPitch=copy.WidthInBytes; }
     result=pcuMemcpy2D_v2(&copy);
-    if(!to_cuda) probe_observe(t,stream,ptsz,result,records);
+    if(!to_cuda) record=probe_observe(t,stream,ptsz,result,records);
     if(!result && !to_cuda) for(y=0;y<t->height;y++) memcpy((char*)mapped.pData+y*mapped.RowPitch,(char*)t->pixels+y*copy.WidthInBytes,copy.WidthInBytes);
     ID3D11DeviceContext_Unmap(t->context,(ID3D11Resource*)t->staging,0);
     if(!result && !to_cuda) ID3D11DeviceContext_CopyResource(t->context,(ID3D11Resource*)t->texture,(ID3D11Resource*)t->staging);
+    /* One readback per sampled texture, at most 64 per armed window. This
+     * separate opt-in adds D3D work and a CPU readback wait; never use for timing.
+     * Keep CUDA success unchanged if diagnostic readback itself fails. */
+    if(!result && !to_cuda && record && probe_readback_enabled && __atomic_load_n(&probe_readback_start_ns,__ATOMIC_ACQUIRE) && !t->probe_readback_done && probe_readbacks<PROBE_READBACK_LIMIT) {
+        t->probe_readback_done=TRUE; probe_readbacks++;
+        record->readback_attempted=1;record->readback_start_ns=probe_now();
+        ID3D11DeviceContext_CopyResource(t->context,(ID3D11Resource*)t->staging,(ID3D11Resource*)t->texture);
+        hr=ID3D11DeviceContext_Map(t->context,(ID3D11Resource*)t->staging,0,D3D11_MAP_READ,0,&mapped);
+        record->readback_result=hr;
+        if(SUCCEEDED(hr)) {
+            probe_compare_readback(record,mapped.pData,mapped.RowPitch,t->pixels);
+            ID3D11DeviceContext_Unmap(t->context,(ID3D11Resource*)t->staging,0);
+        }
+        record->readback_end_ns=probe_now();
+    }
     ID3D10Multithread_Leave(t->multithread);
     return result;
 }

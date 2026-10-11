@@ -1,5 +1,6 @@
 /* Opt-in, sampled inspection of the existing CUDA->host bounce buffer.
- * No additional CUDA/D3D calls. Stats/payload snapshots perturb host timing.
+ * The separate READBACK opt-in adds bounded D3D copy/map calls after copy-back.
+ * Ordinary probing adds no GPU calls. Both modes perturb host timing.
  * Registry lock protects capture state; output happens after that lock leaves. */
 #include <errno.h>
 #include <fcntl.h>
@@ -12,6 +13,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#define PROBE_READBACK_LIMIT 64
 #define PROBE_RECORD_LIMIT 1024
 #define PROBE_PAYLOAD_LIMIT 16
 #define PROBE_PAYLOAD_BYTES (4u*1024u*1024u)
@@ -28,6 +30,11 @@ typedef struct CopyProbeRecord {
     unsigned long long resource_id, epoch, ns, hash;
     uintptr_t resource, texture, array, context, stream;
     int result;
+    unsigned readback_attempted, readback_row_pitch;
+    int readback_result;
+    unsigned long long readback_hash, readback_mismatches, readback_start_ns, readback_end_ns;
+    size_t readback_first_byte;
+    unsigned readback_expected, readback_actual;
     size_t bytes;
     CopyProbeChannel channels[4];
     void *payload;
@@ -37,9 +44,11 @@ static pthread_mutex_t probe_control_lock=PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t probe_output_lock=PTHREAD_MUTEX_INITIALIZER;
 static int probe_dir=-1;
 static pid_t probe_owner;
-static unsigned long long probe_start_ns, probe_resource_id;
+static unsigned long long probe_start_ns, probe_resource_id, probe_readback_start_ns;
 static unsigned probe_records, probe_payloads, probe_inflight;
 static unsigned probe_written, probe_terminal;
+static unsigned probe_readbacks;
+static int probe_readback_enabled;
 static locale_t probe_locale;
 static unsigned probe_dropped, probe_io_errors;
 static unsigned long long probe_next_poll_ns;
@@ -61,6 +70,8 @@ static void probe_setup(void)
     if(fstat(fd,&st) || !S_ISDIR(st.st_mode) || st.st_uid!=geteuid() || (st.st_mode&0777)!=0700) { close(fd); return; }
     probe_locale=newlocale(LC_NUMERIC_MASK,"C",(locale_t)0);
     if(!probe_locale) { close(fd); return; }
+    const char *readback=getenv("ZLUDA_D3D11_COPY_PROBE_READBACK");
+    probe_readback_enabled=readback && !strcmp(readback,"1");
     probe_owner=getpid();
     probe_dir=fd;
 }
@@ -69,29 +80,31 @@ static void probe_poll(void)
     unsigned long long now;
     struct stat st;
     pthread_once(&probe_once,probe_setup);
-    if(probe_dir<0 || probe_owner!=getpid() || __atomic_load_n(&probe_start_ns,__ATOMIC_ACQUIRE)) return;
+    if(probe_dir<0 || probe_owner!=getpid() || (__atomic_load_n(&probe_start_ns,__ATOMIC_ACQUIRE) && (!probe_readback_enabled || __atomic_load_n(&probe_readback_start_ns,__ATOMIC_ACQUIRE)))) return;
     if(pthread_mutex_trylock(&probe_control_lock)) return;
     now=probe_now();
-    if(!__atomic_load_n(&probe_start_ns,__ATOMIC_ACQUIRE) && now && now>=probe_next_poll_ns) {
+    if(now && now>=probe_next_poll_ns) {
         probe_next_poll_ns=now+UINT64_C(500000000);
-        if(!fstatat(probe_dir,"arm",&st,AT_SYMLINK_NOFOLLOW) && S_ISREG(st.st_mode) && st.st_uid==geteuid() && (st.st_mode&0777)==0600)
+        if(!__atomic_load_n(&probe_start_ns,__ATOMIC_ACQUIRE) && !fstatat(probe_dir,"arm",&st,AT_SYMLINK_NOFOLLOW) && S_ISREG(st.st_mode) && st.st_uid==geteuid() && (st.st_mode&0777)==0600)
             __atomic_store_n(&probe_start_ns,now,__ATOMIC_RELEASE);
+        if(probe_readback_enabled && __atomic_load_n(&probe_start_ns,__ATOMIC_ACQUIRE) && !__atomic_load_n(&probe_readback_start_ns,__ATOMIC_ACQUIRE) && !fstatat(probe_dir,"readback-arm",&st,AT_SYMLINK_NOFOLLOW) && S_ISREG(st.st_mode) && st.st_uid==geteuid() && (st.st_mode&0777)==0600)
+            __atomic_store_n(&probe_readback_start_ns,now,__ATOMIC_RELEASE);
     }
     pthread_mutex_unlock(&probe_control_lock);
 }
-static void probe_observe(ZludaCpuTexture *t, CUstream stream, BOOL ptsz, CUresult result, CopyProbeRecord **records)
+static CopyProbeRecord *probe_observe(ZludaCpuTexture *t, CUstream stream, BOOL ptsz, CUresult result, CopyProbeRecord **records)
 {
     unsigned long long start=__atomic_load_n(&probe_start_ns,__ATOMIC_ACQUIRE), now;
     CopyProbeRecord *r;
     const unsigned char *raw=t->pixels;
     size_t i, bytes=(size_t)t->width*t->height*16;
-    if(!start || probe_owner!=getpid()) return;
+    if(!start || probe_owner!=getpid()) return NULL;
     now=probe_now();
-    if(now<start || now-start>PROBE_WINDOW_NS || (t->probe_last_ns && now-t->probe_last_ns<PROBE_INTERVAL_NS)) return;
+    if(now<start || now-start>PROBE_WINDOW_NS || (t->probe_last_ns && now-t->probe_last_ns<PROBE_INTERVAL_NS)) return NULL;
     t->probe_last_ns=now;
-    if(__atomic_load_n(&probe_records,__ATOMIC_RELAXED)>=PROBE_RECORD_LIMIT) { __atomic_fetch_add(&probe_dropped,1,__ATOMIC_RELAXED); return; }
+    if(__atomic_load_n(&probe_records,__ATOMIC_RELAXED)>=PROBE_RECORD_LIMIT) { __atomic_fetch_add(&probe_dropped,1,__ATOMIC_RELAXED); return NULL; }
     r=calloc(1,sizeof(*r));
-    if(!r) { __atomic_fetch_add(&probe_dropped,1,__ATOMIC_RELAXED); return; }
+    if(!r) { __atomic_fetch_add(&probe_dropped,1,__ATOMIC_RELAXED); return NULL; }
     r->sequence=__atomic_add_fetch(&probe_records,1,__ATOMIC_RELAXED); r->resource_id=t->probe_id; r->epoch=t->map_epoch; r->ns=now;
     r->width=t->width; r->height=t->height; r->ptsz=ptsz; r->result=result; r->bytes=bytes;
     r->resource=(uintptr_t)t; r->texture=(uintptr_t)t->texture; r->array=(uintptr_t)t->array;
@@ -116,6 +129,28 @@ static void probe_observe(ZludaCpuTexture *t, CUstream stream, BOOL ptsz, CUresu
     }
     __atomic_add_fetch(&probe_inflight,1,__ATOMIC_RELEASE);
     r->next=*records; *records=r;
+    return r;
+}
+/* Compare only active float4 bytes; D3D row padding is not application data.
+ * Called while the texture registry and D3D context are still protected. */
+static void probe_compare_readback(CopyProbeRecord *r,const void *pixels,unsigned row_pitch,const void *expected)
+{
+    const unsigned char *actual=pixels,*source=expected;
+    size_t row_bytes=(size_t)r->width*16;
+    r->readback_row_pitch=row_pitch;
+    if(row_pitch<row_bytes) { r->readback_result=(int)0x80070057; return; }
+    r->readback_hash=UINT64_C(14695981039346656037);
+    for(unsigned y=0;y<r->height;y++) for(size_t x=0;x<row_bytes;x++) {
+        unsigned char value=actual[(size_t)y*row_pitch+x];
+        r->readback_hash^=value; r->readback_hash*=UINT64_C(1099511628211);
+        if(value!=source[(size_t)y*row_bytes+x]) {
+            if(!r->readback_mismatches) {
+                r->readback_first_byte=(size_t)y*row_bytes+x;
+                r->readback_expected=source[r->readback_first_byte];r->readback_actual=value;
+            }
+            r->readback_mismatches++;
+        }
+    }
 }
 static int probe_write_all(int fd,const void *data,size_t size)
 {
@@ -163,7 +198,7 @@ static void probe_flush(CopyProbeRecord *records)
     pthread_mutex_lock(&probe_output_lock);
     previous=uselocale(probe_locale);
     while((r=records)) {
-        char name[96], payload[96]="", json[4096];
+        char name[96], payload[96]="", json[4096], first[192]="null";
         int n, used=0, payload_ok=0;
         records=r->next;
         if(r->payload) {
@@ -171,7 +206,8 @@ static void probe_flush(CopyProbeRecord *records)
             payload_ok=!probe_publish(payload,r->payload,r->bytes);
             if(!payload_ok)probe_io_errors++;
         }
-        used=snprintf(json,sizeof(json),"{\"schema\":1,\"pid\":%u,\"sequence\":%u,\"monotonic_ns\":%llu,\"window_start_ns\":%llu,\"resource_id\":%llu,\"resource\":\"%" PRIxPTR "\",\"texture\":\"%" PRIxPTR "\",\"array\":\"%" PRIxPTR "\",\"context\":\"%" PRIxPTR "\",\"stream\":\"%" PRIxPTR "\",\"ptsz\":%u,\"map_epoch\":%llu,\"width\":%u,\"height\":%u,\"direction\":\"cuda_to_host_before_d3d_copyback\",\"cuda_result\":%d,\"bytes\":%zu,\"fnv1a64\":\"%016llx\",\"payload\":\"%s\",\"io_errors\":%u,\"dropped\":%u,\"channels\":[",(unsigned)getpid(),r->sequence,r->ns,__atomic_load_n(&probe_start_ns,__ATOMIC_ACQUIRE),r->resource_id,r->resource,r->texture,r->array,r->context,r->stream,r->ptsz,r->epoch,r->width,r->height,r->result,r->bytes,r->hash,payload_ok?payload:"",probe_io_errors,__atomic_load_n(&probe_dropped,__ATOMIC_RELAXED));
+        if(r->readback_mismatches) snprintf(first,sizeof(first),"{\"byte_offset\":%zu,\"pixel\":%zu,\"channel\":%zu,\"expected_byte\":%u,\"actual_byte\":%u}",r->readback_first_byte,r->readback_first_byte/16,(r->readback_first_byte%16)/4,r->readback_expected,r->readback_actual);
+        used=snprintf(json,sizeof(json),"{\"schema\":1,\"pid\":%u,\"sequence\":%u,\"monotonic_ns\":%llu,\"window_start_ns\":%llu,\"resource_id\":%llu,\"resource\":\"%" PRIxPTR "\",\"texture\":\"%" PRIxPTR "\",\"array\":\"%" PRIxPTR "\",\"context\":\"%" PRIxPTR "\",\"stream\":\"%" PRIxPTR "\",\"ptsz\":%u,\"map_epoch\":%llu,\"width\":%u,\"height\":%u,\"direction\":\"cuda_to_host_before_d3d_copyback\",\"cuda_result\":%d,\"bytes\":%zu,\"fnv1a64\":\"%016llx\",\"payload\":\"%s\",\"io_errors\":%u,\"dropped\":%u,\"readback\":{\"attempted\":%u,\"hresult\":%d,\"row_pitch\":%u,\"fnv1a64\":\"%016llx\",\"mismatched_bytes\":%llu,\"start_ns\":%llu,\"end_ns\":%llu,\"first_mismatch\":%s},\"channels\":[",(unsigned)getpid(),r->sequence,r->ns,__atomic_load_n(&probe_start_ns,__ATOMIC_ACQUIRE),r->resource_id,r->resource,r->texture,r->array,r->context,r->stream,r->ptsz,r->epoch,r->width,r->height,r->result,r->bytes,r->hash,payload_ok?payload:"",probe_io_errors,__atomic_load_n(&probe_dropped,__ATOMIC_RELAXED),r->readback_attempted,r->readback_result,r->readback_row_pitch,r->readback_hash,r->readback_mismatches,r->readback_start_ns,r->readback_end_ns,first);
         for(n=0;n<4;n++) {
             CopyProbeChannel *c=&r->channels[n];char minimum[32]="null",maximum[32]="null";
             if(c->finite) { snprintf(minimum,sizeof(minimum),"%.9g",c->minimum); snprintf(maximum,sizeof(maximum),"%.9g",c->maximum); }
