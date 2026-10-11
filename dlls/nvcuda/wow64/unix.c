@@ -173,7 +173,8 @@ static int load_backend(void)
     }
     if (path[0] != '/') return UNSUPPORTED;
     void *lib = dlopen(path, RTLD_NOW | RTLD_LOCAL);
-    if (!lib) { fprintf(stderr, "cuda32: dlopen: %s\n", dlerror()); return UNSUPPORTED; }
+    if (!lib) { const char *err = dlerror(); fprintf(stderr, "nvcuda wow64: dlopen %s failed: %s\n", path, err ? err : "(null)"); return UNSUPPORTED; }
+    fprintf(stderr, "nvcuda wow64: loaded %s\n", path);
 #define LOAD(name) do { *(void **)(&p_##name) = dlsym(lib, #name); \
     if (!p_##name) { dlclose(lib); return UNSUPPORTED; } } while (0)
     LOAD(cuInit); LOAD(cuDriverGetVersion); LOAD(cuDeviceGetCount); LOAD(cuDeviceGet);

@@ -888,6 +888,7 @@ static BOOL load_functions(void)
               err ? err : "(null)");
         return FALSE;
     }
+    fprintf(stderr, "nvcuda: loaded libcuda.so.1\n");
 
     #define LOAD_FUNCPTR(f) if((*(void **)(&p##f) = dlsym(cuda_handle, #f)) == NULL){ERR("Can't find symbol %s\n", #f); return FALSE;}
     #define TRY_LOAD_FUNCPTR(f) *(void **)(&p##f) = dlsym(cuda_handle, #f)
