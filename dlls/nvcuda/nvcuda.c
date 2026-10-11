@@ -18,6 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#define _GNU_SOURCE /* dladdr */
 #include "config.h"
 #include <dlfcn.h>
 #include <stdarg.h>
@@ -888,7 +889,6 @@ static BOOL load_functions(void)
               err ? err : "(null)");
         return FALSE;
     }
-    fprintf(stderr, "nvcuda: loaded libcuda.so.1\n");
 
     #define LOAD_FUNCPTR(f) if((*(void **)(&p##f) = dlsym(cuda_handle, #f)) == NULL){ERR("Can't find symbol %s\n", #f); return FALSE;}
     #define TRY_LOAD_FUNCPTR(f) *(void **)(&p##f) = dlsym(cuda_handle, #f)
@@ -1598,6 +1598,13 @@ static BOOL load_functions(void)
     #undef LOAD_FUNCPTR
     #undef TRY_LOAD_FUNCPTR
 
+    {
+        /* After every required symbol resolved: name the file that provides
+         * them, which is what a Steam run needs to see. */
+        Dl_info info;
+        fprintf(stderr, "nvcuda: using %s\n",
+                dladdr((void *)pcuInit, &info) && info.dli_fname ? info.dli_fname : "libcuda.so.1");
+    }
     return TRUE;
 }
 

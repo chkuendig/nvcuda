@@ -174,9 +174,9 @@ static int load_backend(void)
     if (path[0] != '/') return UNSUPPORTED;
     void *lib = dlopen(path, RTLD_NOW | RTLD_LOCAL);
     if (!lib) { const char *err = dlerror(); fprintf(stderr, "nvcuda wow64: dlopen %s failed: %s\n", path, err ? err : "(null)"); return UNSUPPORTED; }
-    fprintf(stderr, "nvcuda wow64: loaded %s\n", path);
 #define LOAD(name) do { *(void **)(&p_##name) = dlsym(lib, #name); \
-    if (!p_##name) { dlclose(lib); return UNSUPPORTED; } } while (0)
+    if (!p_##name) { fprintf(stderr, "nvcuda wow64: %s lacks %s\n", path, #name); \
+        dlclose(lib); return UNSUPPORTED; } } while (0)
     LOAD(cuInit); LOAD(cuDriverGetVersion); LOAD(cuDeviceGetCount); LOAD(cuDeviceGet);
     LOAD(cuDeviceGetName); LOAD(cuDeviceGetAttribute); LOAD(cuCtxCreate_v2);
     LOAD(cuDeviceGetProperties); LOAD(cuDeviceComputeCapability); LOAD(cuDeviceTotalMem_v2);
@@ -198,6 +198,11 @@ static int load_backend(void)
     LOAD(cuMemsetD8_v2); LOAD(cuMemsetD16_v2);
     LOAD(cuMemsetD8Async); LOAD(cuMemsetD16Async); LOAD(cuMemsetD32Async);
 #undef LOAD
+    {
+        Dl_info info;
+        fprintf(stderr, "nvcuda wow64: using %s\n",
+                dladdr((void *)p_cuInit, &info) && info.dli_fname ? info.dli_fname : path);
+    }
     library = lib;
     return 0;
 }
