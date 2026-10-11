@@ -16,12 +16,15 @@ typedef struct ZludaCpuTexture {
     void *pixels;
     UINT width, height;
     BOOL mapped;
+    unsigned long long probe_id, map_epoch, probe_last_ns, probe_payload_ns;
+    unsigned probe_payloads;
 } ZludaCpuTexture;
 static ZludaCpuTexture *cpu_textures;
 static pthread_mutex_t cpu_textures_lock = PTHREAD_MUTEX_INITIALIZER;
 /* Remains set after the first publication so live handles still work if the
  * opt-in environment is later changed. Never-enabled mode avoids the lock. */
 static LONG cpu_copy_active;
+#include "d3d11_copy_probe.h"
 
 static int cpu_copy_enabled(void)
 {
@@ -112,6 +115,7 @@ static CUresult cpu_register(CUgraphicsResource *out, ID3D11Resource *resource, 
             return result ? result : CUDA_ERROR_INVALID_HANDLE;
         }
     }
+    t->probe_id=++probe_resource_id;
     t->next=cpu_textures; cpu_textures=t;
     InterlockedExchange(&cpu_copy_active,1);
     pthread_mutex_unlock(&cpu_textures_lock);
@@ -119,7 +123,7 @@ static CUresult cpu_register(CUgraphicsResource *out, ID3D11Resource *resource, 
     FIXME("[ZLUDA] CPU-copy registration OK %ux%u resource=%p array=%p\n",t->width,t->height,t,t->array);
     return CUDA_SUCCESS;
 }
-static CUresult cpu_transfer(ZludaCpuTexture *t, BOOL to_cuda)
+static CUresult cpu_transfer(ZludaCpuTexture *t, BOOL to_cuda, CUstream stream, BOOL ptsz, CopyProbeRecord **records)
 {
     D3D11_MAPPED_SUBRESOURCE mapped;
     CUDA_MEMCPY2D copy={0};
@@ -138,6 +142,7 @@ static CUresult cpu_transfer(ZludaCpuTexture *t, BOOL to_cuda)
     }
     else { copy.srcArray=t->array; copy.dstHost=t->pixels; copy.dstPitch=copy.WidthInBytes; }
     result=pcuMemcpy2D_v2(&copy);
+    if(!to_cuda) probe_observe(t,stream,ptsz,result,records);
     if(!result && !to_cuda) for(y=0;y<t->height;y++) memcpy((char*)mapped.pData+y*mapped.RowPitch,(char*)t->pixels+y*copy.WidthInBytes,copy.WidthInBytes);
     ID3D11DeviceContext_Unmap(t->context,(ID3D11Resource*)t->staging,0);
     if(!result && !to_cuda) ID3D11DeviceContext_CopyResource(t->context,(ID3D11Resource*)t->texture,(ID3D11Resource*)t->staging);
@@ -149,8 +154,10 @@ static CUresult cpu_transfer(ZludaCpuTexture *t, BOOL to_cuda)
 static int cpu_map(unsigned count, CUgraphicsResource *resources, CUstream stream, BOOL unmap, BOOL ptsz)
 {
     unsigned i,j,found=0;
+    CopyProbeRecord *records=NULL;
     CUresult result=CUDA_SUCCESS;
     if(!InterlockedCompareExchange(&cpu_copy_active,0,0) || !resources) return -1;
+    probe_poll(); /* Owned arm-file check, outside both interop locks. */
     pthread_mutex_lock(&cpu_textures_lock);
     for(i=0;i<count;i++) if(cpu_find(resources[i])) found++;
     if(!found) { pthread_mutex_unlock(&cpu_textures_lock); return -1; }
@@ -163,11 +170,16 @@ static int cpu_map(unsigned count, CUgraphicsResource *resources, CUstream strea
     }
     result=ptsz?pcuStreamSynchronize_ptsz(stream):pcuStreamSynchronize(stream);
     if(result) goto done;
-    for(i=0;i<count;i++) { result=cpu_transfer(cpu_find(resources[i]),!unmap); if(result) goto done; }
-    for(i=0;i<count;i++) cpu_find(resources[i])->mapped=!unmap;
+    for(i=0;i<count;i++) { result=cpu_transfer(cpu_find(resources[i]),!unmap,stream,ptsz,&records); if(result) goto done; }
+    for(i=0;i<count;i++) {
+        ZludaCpuTexture *t=cpu_find(resources[i]);
+        t->mapped=!unmap;
+        if(!unmap) t->map_epoch++;
+    }
     { static unsigned messages; if(messages++<4) FIXME("[ZLUDA] CPU-copy %s OK count=%u\n",unmap?"unmap":"map",count); }
 done:
     pthread_mutex_unlock(&cpu_textures_lock);
+    probe_flush(records); /* No interop lock held during file output. */
     return result;
 }
 /* op: 0=array, 1=linear pointer, 2=map flags, 3=mipmapped array, 4=unregister */

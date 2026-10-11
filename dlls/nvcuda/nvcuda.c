@@ -6593,6 +6593,8 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
             break;
         case DLL_PROCESS_DETACH:
             if (reserved) break;
+            if (probe_dir>=0) { close(probe_dir); probe_dir=-1; }
+            if (probe_locale) { freelocale(probe_locale); probe_locale=(locale_t)0; }
             if (cuda_handle) dlclose(cuda_handle);
             break;
         case DLL_THREAD_ATTACH:

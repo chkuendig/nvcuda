@@ -93,6 +93,12 @@ int main(void) {
             ID3D11DeviceContext_Unmap(dc,(ID3D11Resource*)staging,0);
             printf("PASS float4 roundtrip trial=%u pass=%u pixels=%u\n",trial,pass,W*H);
         }
+        if(trial==2 && GetEnvironmentVariableA("ZLUDA_COPY_PROBE_FIXTURE",enable_mt,sizeof(enable_mt))) {
+            Sleep(31000); /* Complete the explicitly armed diagnostic window. */
+            CU(cuGraphicsMapResources(1,&res,NULL));
+            CU(cuGraphicsUnmapResources(1,&res,NULL));
+            puts("PASS probe window completed");
+        }
         CU(cuGraphicsUnregisterResource(res));
     }
     ID3D11Texture2D_Release(staging); ID3D11Texture2D_Release(texture);
