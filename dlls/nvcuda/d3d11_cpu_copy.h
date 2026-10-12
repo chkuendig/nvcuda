@@ -31,6 +31,23 @@ static int cpu_copy_enabled(void)
     const char *value = getenv("ZLUDA_D3D11_CPU_COPY");
     return value && !strcmp(value, "1");
 }
+/* Opt-in diagnostic: answer cuGraphicsSubResourceGetMappedArray with
+ * NOT_SUPPORTED for otherwise-valid mapped copy resources. The output is not
+ * written and registration, map state and copies are unchanged. Read once. */
+static LONG cpu_array_rejections;
+static int cpu_array_reject_enabled(void)
+{
+    static LONG state; /* 0 unread, 1 off, 2 on */
+    LONG value=InterlockedCompareExchange(&state,0,0);
+    if(!value) {
+        const char *env=getenv("ZLUDA_D3D11_CPU_COPY_REJECT_MAPPED_ARRAY");
+        value=env && !strcmp(env,"1") ? 2 : 1;
+        if(!InterlockedCompareExchange(&state,value,0) && value==2)
+            FIXME("[ZLUDA] CPU-copy explicit opt-in rejects mapped-array requests\n");
+        value=InterlockedCompareExchange(&state,0,0);
+    }
+    return value==2;
+}
 static ZludaCpuTexture *cpu_find(CUgraphicsResource resource)
 {
     ZludaCpuTexture *t;
@@ -121,6 +138,7 @@ static CUresult cpu_register(CUgraphicsResource *out, ID3D11Resource *resource, 
     pthread_mutex_unlock(&cpu_textures_lock);
     *out=(CUgraphicsResource)t;
     FIXME("[ZLUDA] CPU-copy registration OK %ux%u resource=%p array=%p\n",t->width,t->height,t,t->array);
+    cpu_array_reject_enabled(); /* Log the opt-in once, even if no array is requested. */
     return CUDA_SUCCESS;
 }
 static CUresult cpu_transfer(ZludaCpuTexture *t, BOOL to_cuda, CUstream stream, BOOL ptsz, CopyProbeRecord **records)
@@ -196,6 +214,12 @@ static int cpu_resource(CUgraphicsResource resource, unsigned op, void *out, uns
     case 0:
         if(!out || a || b) result=CUDA_ERROR_INVALID_VALUE;
         else if(!t->mapped) result=211;
+        else if(cpu_array_reject_enabled()) {
+            LONG count=InterlockedIncrement(&cpu_array_rejections);
+            result=CUDA_ERROR_NOT_SUPPORTED;
+            if(count<=8 || !(count&(count-1)))
+                FIXME("[ZLUDA] CPU-copy mapped-array rejected count=%ld %ux%u resource=%p\n",count,t->width,t->height,t);
+        }
         else *(CUarray*)out=t->array;
         break;
     case 1: result=t->mapped?213:211; break;
