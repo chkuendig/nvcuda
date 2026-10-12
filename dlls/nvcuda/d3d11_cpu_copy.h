@@ -218,7 +218,7 @@ static int cpu_resource(CUgraphicsResource resource, unsigned op, void *out, uns
             LONG count=InterlockedIncrement(&cpu_array_rejections);
             result=CUDA_ERROR_NOT_SUPPORTED;
             if(count<=8 || !(count&(count-1)))
-                FIXME("[ZLUDA] CPU-copy mapped-array rejected count=%ld %ux%u resource=%p\n",count,t->width,t->height,t);
+                FIXME("[ZLUDA] CPU-copy mapped-array rejected count=%d %ux%u resource=%p\n",(int)count,t->width,t->height,t);
         }
         else *(CUarray*)out=t->array;
         break;
