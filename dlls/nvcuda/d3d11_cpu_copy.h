@@ -18,6 +18,8 @@ typedef struct ZludaCpuTexture {
     BOOL mapped;
     unsigned long long probe_id, map_epoch, probe_last_ns, probe_payload_ns;
     unsigned probe_payloads;
+    BOOL marker; /* S2 diagnostic: copy-back overwritten with magenta (ZLUDA_D3D11_COPY_MARKER=1) */
+    unsigned marker_witness; /* 0 none yet, 1 first copy logged but all zero, 2 non-zero copy characterised */
 } ZludaCpuTexture;
 static ZludaCpuTexture *cpu_textures;
 static pthread_mutex_t cpu_textures_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -30,6 +32,91 @@ static int cpu_copy_enabled(void)
 {
     const char *value = getenv("ZLUDA_D3D11_CPU_COPY");
     return value && !strcmp(value, "1");
+}
+/* Opt-in S2 diagnostic (ZLUDA_D3D11_COPY_MARKER=1, read once): on CUDA->D3D
+ * copy-back, overwrite every texel of the third resource of each registration
+ * triple with opaque magenta (1,0,1,1). The role comes from registration order:
+ * the game registers its particle textures in consecutive triples, and in the
+ * retained abe75a37 runs the third of each non-zero triple carries the
+ * colour-like signature (RGB in [0,1], small A). A third registration is marked
+ * only if the two registrations before it have the same size. No extra CUDA or
+ * D3D calls and no waits; the probe still observes the unmodified CUDA output. */
+static LONG marker_registrations, marker_copies, marker_first_copies, marker_first_suppressed, marker_unregisters;
+#define MARKER_FIRST_COPY_LIMIT 64
+static UINT marker_prev_w[2], marker_prev_h[2];
+static int cpu_marker_enabled(void)
+{
+    static LONG state; /* 0 unread, 1 off, 2 on */
+    LONG value=InterlockedCompareExchange(&state,0,0);
+    if(!value) {
+        const char *env=getenv("ZLUDA_D3D11_COPY_MARKER");
+        value=env && !strcmp(env,"1") ? 2 : 1;
+        if(!InterlockedCompareExchange(&state,value,0) && value==2)
+            FIXME("[ZLUDA] CPU-copy explicit opt-in marks copy-back of the third resource of each registration triple with magenta\n");
+        value=InterlockedCompareExchange(&state,0,0);
+    }
+    return value==2;
+}
+static BOOL marker_log_count(LONG count) { return count<=8 || !(count&(count-1)); }
+/* Called with cpu_textures_lock held, after t->probe_id is assigned. */
+static void marker_assign(ZludaCpuTexture *t)
+{
+    BOOL same=marker_prev_w[0]==t->width && marker_prev_h[0]==t->height && marker_prev_w[1]==t->width && marker_prev_h[1]==t->height;
+    if(t->probe_id%3==0) {
+        if(same) {
+            LONG count=InterlockedIncrement(&marker_registrations);
+            t->marker=TRUE;
+            if(marker_log_count(count)) FIXME("[ZLUDA] CPU-copy marker resource count=%d ordinal=%llu %ux%u resource=%p\n",(int)count,t->probe_id,t->width,t->height,t);
+        }
+        else FIXME("[ZLUDA] CPU-copy marker skipped ordinal=%llu %ux%u: predecessors differ in size\n",t->probe_id,t->width,t->height);
+    }
+    marker_prev_w[1]=marker_prev_w[0]; marker_prev_h[1]=marker_prev_h[0];
+    marker_prev_w[0]=t->width; marker_prev_h[0]=t->height;
+}
+/* Witness only: does the data about to be overwritten have the colour-like signature? */
+static void marker_signature(const ZludaCpuTexture *t, size_t *nonzero, size_t *rgb_unit, size_t *alpha_below_one)
+{
+    const float *texel=t->pixels;
+    size_t i, n=(size_t)t->width*t->height;
+    *nonzero=*rgb_unit=*alpha_below_one=0;
+    for(i=0;i<n;i++) {
+        const float *v=texel+i*4;
+        if(v[0]>=0.0f && v[0]<=1.0f && v[1]>=0.0f && v[1]<=1.0f && v[2]>=0.0f && v[2]<=1.0f) ++*rgb_unit;
+        if(v[3]<1.0f) ++*alpha_below_one;
+        if(v[0]!=0.0f || v[1]!=0.0f || v[2]!=0.0f || v[3]!=0.0f) ++*nonzero;
+    }
+}
+/* Bounce buffer of a marked resource, after the CUDA copy and before the D3D write.
+ * Every marked resource is characterised on its first copy-back (registration
+ * order alone cannot exclude a shifted ordinal after a re-registration). */
+static void marker_apply(ZludaCpuTexture *t)
+{
+    float *texel=t->pixels;
+    size_t i, n=(size_t)t->width*t->height, nonzero, rgb_unit, alpha_below_one;
+    LONG count=InterlockedIncrement(&marker_copies);
+    /* First copy of each marked resource, and if that was all zero, its first
+     * non-zero copy (all-zero triples can carry particles later). */
+    if(t->marker_witness<2) {
+        marker_signature(t,&nonzero,&rgb_unit,&alpha_below_one);
+        if(!t->marker_witness || nonzero) {
+            const char *kind=!t->marker_witness?"first-copy":"first-nonzero";
+            LONG first=InterlockedIncrement(&marker_first_copies);
+            if(first<=MARKER_FIRST_COPY_LIMIT)
+                FIXME("[ZLUDA] CPU-copy marker %s ordinal=%llu %ux%u resource=%p texels=%zu nonzero=%zu rgb_in_unit=%zu alpha_below_one=%zu\n",
+                      kind,t->probe_id,t->width,t->height,t,n,nonzero,rgb_unit,alpha_below_one);
+            else {
+                LONG suppressed=InterlockedIncrement(&marker_first_suppressed);
+                if(marker_log_count(suppressed)) FIXME("[ZLUDA] CPU-copy marker first-copy witness suppressed count=%d (limit %d)\n",(int)suppressed,MARKER_FIRST_COPY_LIMIT);
+            }
+            t->marker_witness=nonzero?2:1;
+        }
+    }
+    if(marker_log_count(count)) {
+        marker_signature(t,&nonzero,&rgb_unit,&alpha_below_one);
+        FIXME("[ZLUDA] CPU-copy marker copy count=%d ordinal=%llu %ux%u texels=%zu nonzero=%zu rgb_in_unit=%zu alpha_below_one=%zu\n",
+              (int)count,t->probe_id,t->width,t->height,n,nonzero,rgb_unit,alpha_below_one);
+    }
+    for(i=0;i<n;i++) { texel[i*4]=1.0f; texel[i*4+1]=0.0f; texel[i*4+2]=1.0f; texel[i*4+3]=1.0f; }
 }
 static ZludaCpuTexture *cpu_find(CUgraphicsResource resource)
 {
@@ -61,6 +148,7 @@ static CUresult cpu_register(CUgraphicsResource *out, ID3D11Resource *resource, 
     CUresult result;
     ZludaCpuTexture *t;
     HRESULT hr;
+    BOOL marker=cpu_marker_enabled(); /* read once; logs the opt-in at the first registration */
     if(!out || !resource) return CUDA_ERROR_INVALID_VALUE;
     if(flags) return CUDA_ERROR_NOT_SUPPORTED;
     t=HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,sizeof(*t));
@@ -116,6 +204,7 @@ static CUresult cpu_register(CUgraphicsResource *out, ID3D11Resource *resource, 
         }
     }
     t->probe_id=++probe_resource_id;
+    if(marker) marker_assign(t);
     t->next=cpu_textures; cpu_textures=t;
     InterlockedExchange(&cpu_copy_active,1);
     pthread_mutex_unlock(&cpu_textures_lock);
@@ -143,6 +232,7 @@ static CUresult cpu_transfer(ZludaCpuTexture *t, BOOL to_cuda, CUstream stream, 
     else { copy.srcArray=t->array; copy.dstHost=t->pixels; copy.dstPitch=copy.WidthInBytes; }
     result=pcuMemcpy2D_v2(&copy);
     if(!to_cuda) probe_observe(t,stream,ptsz,result,records);
+    if(!result && !to_cuda && t->marker) marker_apply(t);
     if(!result && !to_cuda) for(y=0;y<t->height;y++) memcpy((char*)mapped.pData+y*mapped.RowPitch,(char*)t->pixels+y*copy.WidthInBytes,copy.WidthInBytes);
     ID3D11DeviceContext_Unmap(t->context,(ID3D11Resource*)t->staging,0);
     if(!result && !to_cuda) ID3D11DeviceContext_CopyResource(t->context,(ID3D11Resource*)t->texture,(ID3D11Resource*)t->staging);
@@ -204,6 +294,12 @@ static int cpu_resource(CUgraphicsResource resource, unsigned op, void *out, uns
     case 4:
         if(t->mapped) { result=208; break; }
         result=pcuArrayDestroy(t->array); if(result) break;
+        if(cpu_marker_enabled()) {
+            /* Unregisters while marking: ordinal shifts after re-registration become visible. */
+            LONG count=InterlockedIncrement(&marker_unregisters);
+            if(marker_log_count(count)) FIXME("[ZLUDA] CPU-copy marker-mode unregister count=%d ordinal=%llu %ux%u resource=%p marked=%d\n",
+                                              (int)count,t->probe_id,t->width,t->height,t,t->marker);
+        }
         for(link=&cpu_textures;*link!=t;link=&(*link)->next) {}
         *link=t->next; cpu_release(t); break;
     default: result=CUDA_ERROR_INVALID_VALUE;

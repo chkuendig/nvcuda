@@ -33,7 +33,11 @@ int main(void) {
     ID3D11Device *dev; ID3D11DeviceContext *dc; D3D_FEATURE_LEVEL level;
     HR(D3D11CreateDevice(NULL,D3D_DRIVER_TYPE_HARDWARE,NULL,0,NULL,0,D3D11_SDK_VERSION,&dev,&level,&dc));
     ID3D10Multithread *mt; HR(ID3D11Device_QueryInterface(dev,&IID_ID3D10Multithread,(void**)&mt));
-    char enable_mt[8];
+    char enable_mt[8], marker_env[8];
+    /* S2 marker mode: the relay marks the third of three same-size registrations
+     * (here trial 2); its CUDA->D3D copy-back must then read back as magenta. */
+    int marker_mode=GetEnvironmentVariableA("ZLUDA_D3D11_COPY_MARKER",marker_env,sizeof(marker_env))==1 && marker_env[0]=='1';
+    printf("marker mode=%d\n",marker_mode);
     if(!GetEnvironmentVariableA("ZLUDA_D3D11_CPU_COPY_ENABLE_MT",enable_mt,sizeof(enable_mt)))
         ID3D10Multithread_SetMultithreadProtected(mt,TRUE);
     printf("D3D creation flags=0x%x initial protected=%d\n",ID3D11Device_GetCreationFlags(dev),ID3D10Multithread_GetMultithreadProtected(mt));
@@ -87,6 +91,15 @@ int main(void) {
             CU(cuMemcpy2D_v2(&copy)); CU(cuGraphicsUnmapResources(1,&res,NULL));
             ID3D11DeviceContext_CopyResource(dc,(ID3D11Resource*)staging,(ID3D11Resource*)texture);
             D3D11_MAPPED_SUBRESOURCE mapped; HR(ID3D11DeviceContext_Map(dc,(ID3D11Resource*)staging,0,D3D11_MAP_READ,0,&mapped));
+            if(marker_mode && trial==2) {
+                static const float magenta[4]={1.0f,0.0f,1.0f,1.0f};
+                for(unsigned y=0;y<H;y++) for(unsigned x=0;x<W;x++) if(memcmp((char*)mapped.pData+y*mapped.RowPitch+x*16,magenta,16)) {
+                    fprintf(stderr,"FAIL marker CUDA->D3D trial=%u pass=%u row=%u col=%u\n",trial,pass,y,x); return 6;
+                }
+                ID3D11DeviceContext_Unmap(dc,(ID3D11Resource*)staging,0);
+                printf("PASS marker copy-back trial=%u pass=%u pixels=%u\n",trial,pass,W*H);
+                continue;
+            }
             for(unsigned y=0;y<H;y++) if(memcmp(input+y*W*4,(char*)mapped.pData+y*mapped.RowPitch,W*16)) {
                 fprintf(stderr,"FAIL CUDA->D3D trial=%u pass=%u row=%u\n",trial,pass,y); return 6;
             }
