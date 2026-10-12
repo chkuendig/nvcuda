@@ -1607,13 +1607,23 @@ static BOOL load_functions(void)
 CUresult WINAPI wine_cuArray3DCreate(CUarray *pHandle, const CUDA_ARRAY3D_DESCRIPTOR *pAllocateArray)
 {
     TRACE("(%p, %p)\n", pHandle, pAllocateArray);
-    return pcuArray3DCreate(pHandle, pAllocateArray);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuArray3DCreate(pHandle, pAllocateArray);
+    census_exit_alloc(&census_tok,CA_cuArray3DCreate,result,CK_APP_ARRAY,!result&&pHandle?(uintptr_t)*pHandle:0,0,0,0,0,0,0,0);
+    return result;
 }
 
 CUresult WINAPI wine_cuArray3DCreate_v2(CUarray *pHandle, const CUDA_ARRAY3D_DESCRIPTOR *pAllocateArray)
 {
     TRACE("(%p, %p)\n", pHandle, pAllocateArray);
-    return pcuArray3DCreate_v2(pHandle, pAllocateArray);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuArray3DCreate_v2(pHandle, pAllocateArray);
+    census_exit_alloc(&census_tok,CA_cuArray3DCreate_v2,result,CK_APP_ARRAY,!result&&pHandle?(uintptr_t)*pHandle:0,0,!result&&pAllocateArray?pAllocateArray->Flags:0,0,!result&&pAllocateArray?(unsigned)pAllocateArray->Width:0,!result&&pAllocateArray?(unsigned)pAllocateArray->Height:0,!result&&pAllocateArray?(unsigned)pAllocateArray->Depth:0,!result&&pAllocateArray?(unsigned)pAllocateArray->Format:0);
+    return result;
 }
 
 CUresult WINAPI wine_cuArray3DGetDescriptor(CUDA_ARRAY3D_DESCRIPTOR *pArrayDescriptor, CUarray hArray)
@@ -1631,19 +1641,34 @@ CUresult WINAPI wine_cuArray3DGetDescriptor_v2(CUDA_ARRAY3D_DESCRIPTOR *pArrayDe
 CUresult WINAPI wine_cuArrayCreate(CUarray *pHandle, const CUDA_ARRAY_DESCRIPTOR *pAllocateArray)
 {
     TRACE("(%p, %p)\n", pHandle, pAllocateArray);
-    return pcuArrayCreate(pHandle, pAllocateArray);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuArrayCreate(pHandle, pAllocateArray);
+    census_exit_alloc(&census_tok,CA_cuArrayCreate,result,CK_APP_ARRAY,!result&&pHandle?(uintptr_t)*pHandle:0,0,0,0,0,0,0,0);
+    return result;
 }
 
 CUresult WINAPI wine_cuArrayCreate_v2(CUarray *pHandle, const CUDA_ARRAY_DESCRIPTOR *pAllocateArray)
 {
     TRACE("(%p, %p)\n", pHandle, pAllocateArray);
-    return pcuArrayCreate_v2(pHandle, pAllocateArray);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuArrayCreate_v2(pHandle, pAllocateArray);
+    census_exit_alloc(&census_tok,CA_cuArrayCreate_v2,result,CK_APP_ARRAY,!result&&pHandle?(uintptr_t)*pHandle:0,0,0,0,!result&&pAllocateArray?(unsigned)((const size_t*)pAllocateArray)[0]:0,!result&&pAllocateArray?(unsigned)((const size_t*)pAllocateArray)[1]:0,1,!result&&pAllocateArray?(unsigned)*(const int*)((const size_t*)pAllocateArray+2):0);
+    return result;
 }
 
 CUresult WINAPI wine_cuArrayDestroy(CUarray hArray)
 {
     TRACE("(%p)\n", hArray);
-    return pcuArrayDestroy(hArray);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuArrayDestroy(hArray);
+    census_exit_free(&census_tok,CA_cuArrayDestroy,result,CK_APP_ARRAY,CK_APP_ARRAY,(uintptr_t)hArray,FALSE,0);
+    return result;
 }
 
 CUresult WINAPI wine_cuArrayGetDescriptor(CUDA_ARRAY_DESCRIPTOR *pArrayDescriptor, CUarray hArray)
@@ -1799,7 +1824,12 @@ CUresult WINAPI wine_cuCtxSetSharedMemConfig(CUsharedconfig config)
 CUresult WINAPI wine_cuCtxSynchronize(void)
 {
     TRACE("()\n");
-    return pcuCtxSynchronize();
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuCtxSynchronize();
+    census_exit_sync(&census_tok,CA_cuCtxSynchronize,result,0,NULL,NULL);
+    return result;
 }
 
 CUresult WINAPI wine_cuDeviceCanAccessPeer(int *canAccessPeer, CUdevice dev, CUdevice peerDev)
@@ -1928,19 +1958,34 @@ CUresult WINAPI wine_cuEventElapsedTime(float *pMilliseconds, CUevent hStart, CU
 CUresult WINAPI wine_cuEventQuery(CUevent hEvent)
 {
     TRACE("(%p)\n", hEvent);
-    return pcuEventQuery(hEvent);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuEventQuery(hEvent);
+    census_exit_sync(&census_tok,CA_cuEventQuery,result,0,NULL,hEvent);
+    return result;
 }
 
 CUresult WINAPI wine_cuEventRecord(CUevent hEvent, CUstream hStream)
 {
     TRACE("(%p, %p)\n", hEvent, hStream);
-    return pcuEventRecord(hEvent, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuEventRecord(hEvent, hStream);
+    census_exit_sync(&census_tok,CA_cuEventRecord,result,0,hStream,hEvent);
+    return result;
 }
 
 CUresult WINAPI wine_cuEventSynchronize(CUevent hEvent)
 {
     TRACE("(%p)\n", hEvent);
-    return pcuEventSynchronize(hEvent);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuEventSynchronize(hEvent);
+    census_exit_sync(&census_tok,CA_cuEventSynchronize,result,0,NULL,hEvent);
+    return result;
 }
 
 CUresult WINAPI wine_cuFuncGetAttribute(int *pi, CUfunction_attribute attrib, CUfunction hfunc)
@@ -2089,9 +2134,9 @@ CUresult WINAPI wine_cuGraphicsGLRegisterImage(CUgraphicsResource *pCudaResource
     return pcuGraphicsGLRegisterImage(pCudaResource, image, target, Flags);
 }
 
-CUresult WINAPI wine_cuGraphicsMapResources(unsigned int count, CUgraphicsResource *resources, CUstream hStream)
+static CUresult graphics_cuGraphicsMapResources(unsigned int count, CUgraphicsResource *resources, CUstream hStream, CensusRelayInfo *census_info)
 {
-    int copy_result=cpu_map(count,resources,hStream,FALSE,FALSE); if(copy_result>=0) return copy_result;
+    int copy_result=cpu_map(count,resources,hStream,FALSE,FALSE,census_info); if(copy_result>=0) return copy_result;
     TRACE("(%u, %p, %p)\n", count, resources, hStream);
     /* Refresh imported memory with current D3D11 image contents BEFORE
      * libcuda.so/HIP starts reading. Resources not in our table (eg GL,
@@ -2100,45 +2145,112 @@ CUresult WINAPI wine_cuGraphicsMapResources(unsigned int count, CUgraphicsResour
     return pcuGraphicsMapResources(count, resources, hStream);
 }
 
-CUresult WINAPI wine_cuGraphicsResourceGetMappedMipmappedArray(CUmipmappedArray *pMipmappedArray, CUgraphicsResource resource)
+CUresult WINAPI wine_cuGraphicsMapResources(unsigned int count, CUgraphicsResource *resources, CUstream hStream)
 {
-    int copy_result=cpu_resource(resource,3,NULL,0,0); if(copy_result>=0) return copy_result;
+    CensusToken census_tok;
+    CensusRelayInfo census_info={CB_FORWARDED};
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_GRAPHICS);
+    result=graphics_cuGraphicsMapResources(count, resources, hStream, &census_info);
+    census_exit_gfx(&census_tok,CA_cuGraphicsMapResources,CG_MAP,result,&census_info,(uintptr_t)resources,count,hStream,0,0,0);
+    return result;
+}
+
+static CUresult graphics_cuGraphicsResourceGetMappedMipmappedArray(CUmipmappedArray *pMipmappedArray, CUgraphicsResource resource, CensusRelayInfo *census_info)
+{
+    int copy_result=cpu_resource(resource,3,NULL,0,0,census_info); if(copy_result>=0) return copy_result;
     TRACE("(%p, %p)\n", pMipmappedArray, resource);
     return pcuGraphicsResourceGetMappedMipmappedArray(pMipmappedArray, resource);
 }
 
-CUresult WINAPI wine_cuGraphicsResourceGetMappedPointer(CUdeviceptr_v1 *pDevPtr, unsigned int *pSize, CUgraphicsResource resource)
+CUresult WINAPI wine_cuGraphicsResourceGetMappedMipmappedArray(CUmipmappedArray *pMipmappedArray, CUgraphicsResource resource)
 {
-    int copy_result=cpu_resource(resource,1,NULL,0,0); if(copy_result>=0) return copy_result;
+    CensusToken census_tok;
+    CensusRelayInfo census_info={CB_FORWARDED};
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_GRAPHICS);
+    result=graphics_cuGraphicsResourceGetMappedMipmappedArray(pMipmappedArray, resource, &census_info);
+    census_exit_gfx(&census_tok,CA_cuGraphicsResourceGetMappedMipmappedArray,CG_GET_MIPMAPPED,result,&census_info,(uintptr_t)resource,1,NULL,!result&&pMipmappedArray?(uintptr_t)*pMipmappedArray:0,0,0);
+    return result;
+}
+
+static CUresult graphics_cuGraphicsResourceGetMappedPointer(CUdeviceptr_v1 *pDevPtr, unsigned int *pSize, CUgraphicsResource resource, CensusRelayInfo *census_info)
+{
+    int copy_result=cpu_resource(resource,1,NULL,0,0,census_info); if(copy_result>=0) return copy_result;
     TRACE("(%p, %p, %p)\n", pDevPtr, pSize, resource);
     return pcuGraphicsResourceGetMappedPointer(pDevPtr, pSize, resource);
 }
 
-CUresult WINAPI wine_cuGraphicsResourceGetMappedPointer_v2(CUdeviceptr *pDevPtr, size_t *pSize, CUgraphicsResource resource)
+CUresult WINAPI wine_cuGraphicsResourceGetMappedPointer(CUdeviceptr_v1 *pDevPtr, unsigned int *pSize, CUgraphicsResource resource)
 {
-    int copy_result=cpu_resource(resource,1,NULL,0,0); if(copy_result>=0) return copy_result;
+    CensusToken census_tok;
+    CensusRelayInfo census_info={CB_FORWARDED};
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_GRAPHICS);
+    result=graphics_cuGraphicsResourceGetMappedPointer(pDevPtr, pSize, resource, &census_info);
+    census_exit_gfx(&census_tok,CA_cuGraphicsResourceGetMappedPointer,CG_GET_POINTER,result,&census_info,(uintptr_t)resource,1,NULL,!result&&pDevPtr?*pDevPtr:0,!result&&pSize?*pSize:0,0);
+    return result;
+}
+
+static CUresult graphics_cuGraphicsResourceGetMappedPointer_v2(CUdeviceptr *pDevPtr, size_t *pSize, CUgraphicsResource resource, CensusRelayInfo *census_info)
+{
+    int copy_result=cpu_resource(resource,1,NULL,0,0,census_info); if(copy_result>=0) return copy_result;
     TRACE("(%p, %p, %p)\n", pDevPtr, pSize, resource);
     return pcuGraphicsResourceGetMappedPointer_v2(pDevPtr, pSize, resource);
 }
 
-CUresult WINAPI wine_cuGraphicsResourceSetMapFlags(CUgraphicsResource resource, unsigned int flags)
+CUresult WINAPI wine_cuGraphicsResourceGetMappedPointer_v2(CUdeviceptr *pDevPtr, size_t *pSize, CUgraphicsResource resource)
 {
-    int copy_result=cpu_resource(resource,2,NULL,flags,0); if(copy_result>=0) return copy_result;
+    CensusToken census_tok;
+    CensusRelayInfo census_info={CB_FORWARDED};
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_GRAPHICS);
+    result=graphics_cuGraphicsResourceGetMappedPointer_v2(pDevPtr, pSize, resource, &census_info);
+    census_exit_gfx(&census_tok,CA_cuGraphicsResourceGetMappedPointer_v2,CG_GET_POINTER,result,&census_info,(uintptr_t)resource,1,NULL,!result&&pDevPtr?*pDevPtr:0,!result&&pSize?*pSize:0,0);
+    return result;
+}
+
+static CUresult graphics_cuGraphicsResourceSetMapFlags(CUgraphicsResource resource, unsigned int flags, CensusRelayInfo *census_info)
+{
+    int copy_result=cpu_resource(resource,2,NULL,flags,0,census_info); if(copy_result>=0) return copy_result;
     TRACE("(%p, %u)\n", resource, flags);
     return pcuGraphicsResourceSetMapFlags(resource, flags);
+}
+
+CUresult WINAPI wine_cuGraphicsResourceSetMapFlags(CUgraphicsResource resource, unsigned int flags)
+{
+    CensusToken census_tok;
+    CensusRelayInfo census_info={CB_FORWARDED};
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_GRAPHICS);
+    result=graphics_cuGraphicsResourceSetMapFlags(resource, flags, &census_info);
+    census_exit_gfx(&census_tok,CA_cuGraphicsResourceSetMapFlags,CG_SET_FLAGS,result,&census_info,(uintptr_t)resource,1,NULL,0,flags,0);
+    return result;
+}
+
+static CUresult graphics_cuGraphicsSubResourceGetMappedArray(CUarray *pArray, CUgraphicsResource resource,
+                                                         unsigned int arrayIndex, unsigned int mipLevel, CensusRelayInfo *census_info)
+{
+    int copy_result=cpu_resource(resource,0,pArray,arrayIndex,mipLevel,census_info); if(copy_result>=0) return copy_result;
+    TRACE("(%p, %p, %u, %u)\n", pArray, resource, arrayIndex, mipLevel);
+    return pcuGraphicsSubResourceGetMappedArray(pArray, resource, arrayIndex, mipLevel);
 }
 
 CUresult WINAPI wine_cuGraphicsSubResourceGetMappedArray(CUarray *pArray, CUgraphicsResource resource,
                                                          unsigned int arrayIndex, unsigned int mipLevel)
 {
-    int copy_result=cpu_resource(resource,0,pArray,arrayIndex,mipLevel); if(copy_result>=0) return copy_result;
-    TRACE("(%p, %p, %u, %u)\n", pArray, resource, arrayIndex, mipLevel);
-    return pcuGraphicsSubResourceGetMappedArray(pArray, resource, arrayIndex, mipLevel);
+    CensusToken census_tok;
+    CensusRelayInfo census_info={CB_FORWARDED};
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_GRAPHICS);
+    result=graphics_cuGraphicsSubResourceGetMappedArray(pArray, resource, arrayIndex, mipLevel, &census_info);
+    census_exit_gfx(&census_tok,CA_cuGraphicsSubResourceGetMappedArray,CG_GET_ARRAY,result,&census_info,(uintptr_t)resource,1,NULL,!result&&pArray?(uintptr_t)*pArray:0,arrayIndex,mipLevel);
+    return result;
 }
 
-CUresult WINAPI wine_cuGraphicsUnmapResources(unsigned int count, CUgraphicsResource *resources, CUstream hStream)
+static CUresult graphics_cuGraphicsUnmapResources(unsigned int count, CUgraphicsResource *resources, CUstream hStream, CensusRelayInfo *census_info)
 {
-    int copy_result=cpu_map(count,resources,hStream,TRUE,FALSE); if(copy_result>=0) return copy_result;
+    int copy_result=cpu_map(count,resources,hStream,TRUE,FALSE,census_info); if(copy_result>=0) return copy_result;
     TRACE("(%u, %p, %p)\n", count, resources, hStream);
     /* Propagate CUDA-written buffer contents back into DXVK's image BEFORE
      * libcuda.so finalises the unmap, so the next D3D11 sample sees the
@@ -2147,9 +2259,20 @@ CUresult WINAPI wine_cuGraphicsUnmapResources(unsigned int count, CUgraphicsReso
     return pcuGraphicsUnmapResources(count, resources, hStream);
 }
 
-CUresult WINAPI wine_cuGraphicsUnregisterResource(CUgraphicsResource resource)
+CUresult WINAPI wine_cuGraphicsUnmapResources(unsigned int count, CUgraphicsResource *resources, CUstream hStream)
 {
-    int copy_result=cpu_resource(resource,4,NULL,0,0); if(copy_result>=0) return copy_result;
+    CensusToken census_tok;
+    CensusRelayInfo census_info={CB_FORWARDED};
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_GRAPHICS);
+    result=graphics_cuGraphicsUnmapResources(count, resources, hStream, &census_info);
+    census_exit_gfx(&census_tok,CA_cuGraphicsUnmapResources,CG_UNMAP,result,&census_info,(uintptr_t)resources,count,hStream,0,0,0);
+    return result;
+}
+
+static CUresult graphics_cuGraphicsUnregisterResource(CUgraphicsResource resource, CensusRelayInfo *census_info)
+{
+    int copy_result=cpu_resource(resource,4,NULL,0,0,census_info); if(copy_result>=0) return copy_result;
     TRACE("(%p)\n", resource);
     CUresult cu = pcuGraphicsUnregisterResource(resource);
     /* Tear down our PE-side table entry AFTER libcuda.so has had a chance
@@ -2158,6 +2281,17 @@ CUresult WINAPI wine_cuGraphicsUnregisterResource(CUgraphicsResource resource)
      * resources. */
     zluda_d3d11_forget_resource((void*)resource);
     return cu;
+}
+
+CUresult WINAPI wine_cuGraphicsUnregisterResource(CUgraphicsResource resource)
+{
+    CensusToken census_tok;
+    CensusRelayInfo census_info={CB_FORWARDED};
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_GRAPHICS);
+    result=graphics_cuGraphicsUnregisterResource(resource, &census_info);
+    census_exit_gfx(&census_tok,CA_cuGraphicsUnregisterResource,CG_UNREGISTER,result,&census_info,(uintptr_t)resource,1,NULL,0,0,0);
+    return result;
 }
 
 CUresult WINAPI wine_cuInit(unsigned int flags)
@@ -2254,63 +2388,113 @@ CUresult WINAPI wine_cuLinkDestroy(CUlinkState state)
 CUresult WINAPI wine_cuMemAlloc(CUdeviceptr *dptr, unsigned int bytesize)
 {
     TRACE("(%p, %u)\n", dptr, bytesize);
-    return pcuMemAlloc(dptr, bytesize);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuMemAlloc(dptr, bytesize);
+    census_exit_alloc(&census_tok,CA_cuMemAlloc,result,CK_DEVICE,!result&&dptr?*(CUdeviceptr_v1*)dptr:0,bytesize,0,0,0,0,0,0);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemAllocHost(void **pp, unsigned int bytesize)
 {
     TRACE("(%p, %u)\n", pp, bytesize);
-    return pcuMemAllocHost(pp, bytesize);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuMemAllocHost(pp, bytesize);
+    census_exit_alloc(&census_tok,CA_cuMemAllocHost,result,CK_HOST_LEGACY,!result&&pp?(uintptr_t)*pp:0,bytesize,0,0,0,0,0,0);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemAllocHost_v2(void **pp, size_t bytesize)
 {
     TRACE("(%p, %zu)\n", pp, bytesize);
-    return pcuMemAllocHost_v2(pp, bytesize);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuMemAllocHost_v2(pp, bytesize);
+    census_exit_alloc(&census_tok,CA_cuMemAllocHost_v2,result,CK_HOST_LEGACY,!result&&pp?(uintptr_t)*pp:0,bytesize,0,0,0,0,0,0);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemAllocManaged(CUdeviceptr_v2 *dptr, size_t bytesize, unsigned int flags)
 {
     TRACE("(%p, %zu, %u)\n", dptr, bytesize, flags);
-    return pcuMemAllocManaged(dptr, bytesize, flags);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuMemAllocManaged(dptr, bytesize, flags);
+    census_exit_alloc(&census_tok,CA_cuMemAllocManaged,result,CK_MANAGED,!result&&dptr?*dptr:0,bytesize,flags,0,0,0,0,0);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemAllocPitch(CUdeviceptr *dptr, unsigned int *pPitch, unsigned int WidthInBytes,
                                      unsigned int Height, unsigned int ElementSizeBytes)
 {
     TRACE("(%p, %p, %u, %u, %u)\n", dptr, pPitch, WidthInBytes, Height, ElementSizeBytes);
-    return pcuMemAllocPitch(dptr, pPitch, WidthInBytes, Height, ElementSizeBytes);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuMemAllocPitch(dptr, pPitch, WidthInBytes, Height, ElementSizeBytes);
+    census_exit_alloc(&census_tok,CA_cuMemAllocPitch,result,CK_DEVICE_PITCH,!result&&dptr&&pPitch?*(CUdeviceptr_v1*)dptr:0,!result&&pPitch?(uint64_t)*pPitch*Height:0,0,0,WidthInBytes,Height,1,ElementSizeBytes);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemAllocPitch_v2(CUdeviceptr_v2 *dptr, size_t *pPitch, size_t WidthInBytes,
                                         size_t Height, unsigned int ElementSizeBytes)
 {
     TRACE("(%p, %p, %zu, %zu, %u)\n", dptr, pPitch, WidthInBytes, Height, ElementSizeBytes);
-    return pcuMemAllocPitch_v2(dptr, pPitch, WidthInBytes, Height, ElementSizeBytes);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuMemAllocPitch_v2(dptr, pPitch, WidthInBytes, Height, ElementSizeBytes);
+    census_exit_alloc(&census_tok,CA_cuMemAllocPitch_v2,result,CK_DEVICE_PITCH,!result&&dptr&&pPitch?*dptr:0,!result&&pPitch?(uint64_t)*pPitch*Height:0,0,0,WidthInBytes,Height,1,ElementSizeBytes);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemAlloc_v2(CUdeviceptr_v2 *dptr, size_t bytesize)
 {
     TRACE("(%p, %zu)\n", dptr, bytesize);
-    return pcuMemAlloc_v2(dptr, bytesize);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuMemAlloc_v2(dptr, bytesize);
+    census_exit_alloc(&census_tok,CA_cuMemAlloc_v2,result,CK_DEVICE,!result&&dptr?*dptr:0,bytesize,0,0,0,0,0,0);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemFree(CUdeviceptr_v1 dptr)
 {
     TRACE("(%u)\n", dptr);
-    return pcuMemFree(dptr);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuMemFree(dptr);
+    census_exit_free(&census_tok,CA_cuMemFree,result,CK_DEVICE,CK_MANAGED,dptr,FALSE,0);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemFreeHost(void *p)
 {
     TRACE("(%p)\n", p);
-    return pcuMemFreeHost(p);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuMemFreeHost(p);
+    census_exit_free(&census_tok,CA_cuMemFreeHost,result,CK_HOST_ALLOC,CK_HOST_LEGACY,(uintptr_t)p,FALSE,0);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemFree_v2(CUdeviceptr_v2 dptr)
 {
     TRACE("(" DEV_PTR ")\n", dptr);
-    return pcuMemFree_v2(dptr);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuMemFree_v2(dptr);
+    census_exit_free(&census_tok,CA_cuMemFree_v2,result,CK_DEVICE,CK_MANAGED,dptr,FALSE,0);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemGetAddressRange(CUdeviceptr_v1 *pbase, unsigned int *psize, CUdeviceptr_v1 dptr)
@@ -2340,19 +2524,34 @@ CUresult WINAPI wine_cuMemGetInfo_v2(size_t *free, size_t *total)
 CUresult WINAPI wine_cuMemHostAlloc(void **pp, size_t bytesize, unsigned int Flags)
 {
     TRACE("(%p, %zu, %u)\n", pp, bytesize, Flags);
-    return pcuMemHostAlloc(pp, bytesize, Flags);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuMemHostAlloc(pp, bytesize, Flags);
+    census_exit_alloc(&census_tok,CA_cuMemHostAlloc,result,CK_HOST_ALLOC,!result&&pp?(uintptr_t)*pp:0,bytesize,Flags,0,0,0,0,0);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemHostGetDevicePointer(CUdeviceptr *pdptr, void *p, unsigned int Flags)
 {
     TRACE("(%p, %p, %u)\n", pdptr, p, Flags);
-    return pcuMemHostGetDevicePointer(pdptr, p, Flags);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuMemHostGetDevicePointer(pdptr, p, Flags);
+    census_exit_alias(&census_tok,CA_cuMemHostGetDevicePointer,result,(uintptr_t)p,!result&&pdptr?*pdptr:0);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemHostGetDevicePointer_v2(CUdeviceptr *pdptr, void *p, unsigned int Flags)
 {
     TRACE("(%p, %p, %u)\n", pdptr, p, Flags);
-    return pcuMemHostGetDevicePointer_v2(pdptr, p, Flags);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuMemHostGetDevicePointer_v2(pdptr, p, Flags);
+    census_exit_alias(&census_tok,CA_cuMemHostGetDevicePointer_v2,result,(uintptr_t)p,!result&&pdptr?*pdptr:0);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemHostGetFlags(unsigned int *pFlags, void *p)
@@ -2364,273 +2563,493 @@ CUresult WINAPI wine_cuMemHostGetFlags(unsigned int *pFlags, void *p)
 CUresult WINAPI wine_cuMemHostRegister(void *p, size_t bytesize, unsigned int Flags)
 {
     TRACE("(%p, %zu, %u)\n", p, bytesize, Flags);
-    return pcuMemHostRegister(p, bytesize, Flags);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuMemHostRegister(p, bytesize, Flags);
+    census_exit_alloc(&census_tok,CA_cuMemHostRegister,result,CK_HOST_REGISTERED,(uintptr_t)p,bytesize,Flags,0,0,0,0,0);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemHostUnregister(void *p)
 {
     TRACE("(%p)\n", p);
-    return pcuMemHostUnregister(p);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuMemHostUnregister(p);
+    census_exit_free(&census_tok,CA_cuMemHostUnregister,result,CK_HOST_REGISTERED,CK_HOST_REGISTERED,(uintptr_t)p,FALSE,0);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpy(CUdeviceptr_v2 dst, CUdeviceptr_v2 src, size_t ByteCount)
 {
     TRACE("(" DEV_PTR ", " DEV_PTR ", %zu)\n", dst, src, ByteCount);
-    return pcuMemcpy(dst, src, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpy(dst, src, ByteCount);
+    census_exit_transfer(&census_tok,CA_cuMemcpy,result,CF_UNIFIED,NULL,NULL,4,0,src,0,0,4,0,dst,0,0,ByteCount,NULL);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpy2D(const CUDA_MEMCPY2D *pCopy)
 {
     TRACE("(%p)\n", pCopy);
-    return pcuMemcpy2D(pCopy);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpy2D(pCopy);
+    census_exit_transfer(&census_tok,CA_cuMemcpy2D,result,CF_V1_UNDECODED,NULL,NULL,0,0,0,0,0,0,0,0,0,0,0,NULL);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpy2DAsync(const CUDA_MEMCPY2D *pCopy, CUstream hStream)
 {
     TRACE("(%p, %p)\n", pCopy, hStream);
-    return pcuMemcpy2DAsync(pCopy, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpy2DAsync(pCopy, hStream);
+    census_exit_transfer(&census_tok,CA_cuMemcpy2DAsync,result,CF_V1_UNDECODED|CF_ASYNC,NULL,NULL,0,0,0,0,0,0,0,0,0,0,0,hStream);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpy2DAsync_v2(const CUDA_MEMCPY2D *pCopy, CUstream hStream)
 {
     TRACE("(%p, %p)\n", pCopy, hStream);
-    return pcuMemcpy2DAsync_v2(pCopy, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpy2DAsync_v2(pCopy, hStream);
+    census_exit_transfer(&census_tok,CA_cuMemcpy2DAsync_v2,result,CF_ASYNC,NULL,pCopy,0,0,0,0,0,0,0,0,0,0,0,hStream);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpy2DUnaligned(const CUDA_MEMCPY2D *pCopy)
 {
     TRACE("(%p)\n", pCopy);
-    return pcuMemcpy2DUnaligned(pCopy);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpy2DUnaligned(pCopy);
+    census_exit_transfer(&census_tok,CA_cuMemcpy2DUnaligned,result,CF_V1_UNDECODED,NULL,NULL,0,0,0,0,0,0,0,0,0,0,0,NULL);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpy2DUnaligned_v2(const CUDA_MEMCPY2D *pCopy)
 {
     TRACE("(%p)\n", pCopy);
-    return pcuMemcpy2DUnaligned_v2(pCopy);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpy2DUnaligned_v2(pCopy);
+    census_exit_transfer(&census_tok,CA_cuMemcpy2DUnaligned_v2,result,0,NULL,pCopy,0,0,0,0,0,0,0,0,0,0,0,NULL);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpy2D_v2(const CUDA_MEMCPY2D *pCopy)
 {
     TRACE("(%p)\n", pCopy);
-    return pcuMemcpy2D_v2(pCopy);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpy2D_v2(pCopy);
+    census_exit_transfer(&census_tok,CA_cuMemcpy2D_v2,result,0,NULL,pCopy,0,0,0,0,0,0,0,0,0,0,0,NULL);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpy3D(const CUDA_MEMCPY3D *pCopy)
 {
     TRACE("(%p)\n", pCopy);
-    return pcuMemcpy3D(pCopy);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpy3D(pCopy);
+    census_exit_transfer(&census_tok,CA_cuMemcpy3D,result,CF_V1_UNDECODED,NULL,NULL,0,0,0,0,0,0,0,0,0,0,0,NULL);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpy3DAsync(const CUDA_MEMCPY3D *pCopy, CUstream hStream)
 {
     TRACE("(%p, %p)\n", pCopy, hStream);
-    return pcuMemcpy3DAsync(pCopy, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpy3DAsync(pCopy, hStream);
+    census_exit_transfer(&census_tok,CA_cuMemcpy3DAsync,result,CF_V1_UNDECODED|CF_ASYNC,NULL,NULL,0,0,0,0,0,0,0,0,0,0,0,hStream);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpy3DAsync_v2(const CUDA_MEMCPY3D *pCopy, CUstream hStream)
 {
     TRACE("(%p, %p)\n", pCopy, hStream);
-    return pcuMemcpy3DAsync_v2(pCopy, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpy3DAsync_v2(pCopy, hStream);
+    census_exit_transfer(&census_tok,CA_cuMemcpy3DAsync_v2,result,CF_ASYNC,pCopy,NULL,0,0,0,0,0,0,0,0,0,0,0,hStream);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpy3DPeer(const CUDA_MEMCPY3D_PEER *pCopy)
 {
     TRACE("(%p)\n", pCopy);
-    return pcuMemcpy3DPeer(pCopy);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpy3DPeer(pCopy);
+    census_exit_count(&census_tok,CA_cuMemcpy3DPeer,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpy3DPeerAsync(const CUDA_MEMCPY3D_PEER *pCopy, CUstream hStream)
 {
     TRACE("(%p, %p)\n", pCopy, hStream);
-    return pcuMemcpy3DPeerAsync(pCopy, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpy3DPeerAsync(pCopy, hStream);
+    census_exit_count(&census_tok,CA_cuMemcpy3DPeerAsync,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpy3D_v2(const CUDA_MEMCPY3D *pCopy)
 {
     TRACE("(%p)\n", pCopy);
-    return pcuMemcpy3D_v2(pCopy);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpy3D_v2(pCopy);
+    census_exit_transfer(&census_tok,CA_cuMemcpy3D_v2,result,0,pCopy,NULL,0,0,0,0,0,0,0,0,0,0,0,NULL);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyAsync(CUdeviceptr dst, CUdeviceptr src, size_t ByteCount, CUstream hStream)
 {
     TRACE("(" DEV_PTR ", " DEV_PTR ", %zu, %p)\n", dst, src, ByteCount, hStream);
-    return pcuMemcpyAsync(dst, src, ByteCount, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpyAsync(dst, src, ByteCount, hStream);
+    census_exit_transfer(&census_tok,CA_cuMemcpyAsync,result,CF_UNIFIED|CF_ASYNC,NULL,NULL,4,0,src,0,0,4,0,dst,0,0,ByteCount,hStream);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyAtoA(CUarray dstArray, unsigned int dstOffset, CUarray srcArray,
                                   unsigned int srcOffset, unsigned int ByteCount)
 {
     TRACE("(%p, %u, %p, %u, %u)\n", dstArray, dstOffset, srcArray, srcOffset, ByteCount);
-    return pcuMemcpyAtoA(dstArray, dstOffset, srcArray, srcOffset, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyAtoA(dstArray, dstOffset, srcArray, srcOffset, ByteCount);
+    census_exit_count(&census_tok,CA_cuMemcpyAtoA,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyAtoA_v2(CUarray dstArray, size_t dstOffset, CUarray srcArray,
                                      size_t srcOffset, size_t ByteCount)
 {
     TRACE("(%p, %zu, %p, %zu, %zu)\n", dstArray, dstOffset, srcArray, srcOffset, ByteCount);
-    return pcuMemcpyAtoA_v2(dstArray, dstOffset, srcArray, srcOffset, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyAtoA_v2(dstArray, dstOffset, srcArray, srcOffset, ByteCount);
+    census_exit_count(&census_tok,CA_cuMemcpyAtoA_v2,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyAtoD(CUdeviceptr_v1 dstDevice, CUarray srcArray, unsigned int srcOffset, unsigned int ByteCount)
 {
     TRACE("(%u, %p, %u, %u)\n", dstDevice, srcArray, srcOffset, ByteCount);
-    return pcuMemcpyAtoD(dstDevice, srcArray, srcOffset, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyAtoD(dstDevice, srcArray, srcOffset, ByteCount);
+    census_exit_count(&census_tok,CA_cuMemcpyAtoD,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyAtoD_v2(CUdeviceptr_v2 dstDevice, CUarray srcArray, size_t srcOffset, size_t ByteCount)
 {
     TRACE("(" DEV_PTR ", %p, %zu, %zu)\n", dstDevice, srcArray, srcOffset, ByteCount);
-    return pcuMemcpyAtoD_v2(dstDevice, srcArray, srcOffset, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyAtoD_v2(dstDevice, srcArray, srcOffset, ByteCount);
+    census_exit_count(&census_tok,CA_cuMemcpyAtoD_v2,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyAtoH(void *dstHost, CUarray srcArray, unsigned int srcOffset, unsigned int ByteCount)
 {
     TRACE("(%p, %p, %u, %u)\n", dstHost, srcArray, srcOffset, ByteCount);
-    return pcuMemcpyAtoH(dstHost, srcArray, srcOffset, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpyAtoH(dstHost, srcArray, srcOffset, ByteCount);
+    census_exit_transfer(&census_tok,CA_cuMemcpyAtoH,result,0,NULL,NULL,3,0,0,(uintptr_t)srcArray,srcOffset,1,(uintptr_t)dstHost,0,0,0,ByteCount,NULL);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyAtoHAsync(void *dstHost, CUarray srcArray, unsigned int srcOffset, unsigned int ByteCount, CUstream hStream)
 {
     TRACE("(%p, %p, %u, %u, %p)\n", dstHost, srcArray, srcOffset, ByteCount, hStream);
-    return pcuMemcpyAtoHAsync(dstHost, srcArray, srcOffset, ByteCount, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpyAtoHAsync(dstHost, srcArray, srcOffset, ByteCount, hStream);
+    census_exit_transfer(&census_tok,CA_cuMemcpyAtoHAsync,result,CF_ASYNC,NULL,NULL,3,0,0,(uintptr_t)srcArray,srcOffset,1,(uintptr_t)dstHost,0,0,0,ByteCount,hStream);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyAtoHAsync_v2(void *dstHost, CUarray srcArray, size_t srcOffset, size_t ByteCount, CUstream hStream)
 {
     TRACE("(%p, %p, %zu, %zu, %p)\n", dstHost, srcArray, srcOffset, ByteCount, hStream);
-    return pcuMemcpyAtoHAsync_v2(dstHost, srcArray, srcOffset, ByteCount, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpyAtoHAsync_v2(dstHost, srcArray, srcOffset, ByteCount, hStream);
+    census_exit_transfer(&census_tok,CA_cuMemcpyAtoHAsync_v2,result,CF_ASYNC,NULL,NULL,3,0,0,(uintptr_t)srcArray,srcOffset,1,(uintptr_t)dstHost,0,0,0,ByteCount,hStream);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyAtoH_v2(void *dstHost, CUarray srcArray, size_t srcOffset, size_t ByteCount)
 {
     TRACE("(%p, %p, %zu, %zu)\n", dstHost, srcArray, srcOffset, ByteCount);
-    return pcuMemcpyAtoH_v2(dstHost, srcArray, srcOffset, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpyAtoH_v2(dstHost, srcArray, srcOffset, ByteCount);
+    census_exit_transfer(&census_tok,CA_cuMemcpyAtoH_v2,result,0,NULL,NULL,3,0,0,(uintptr_t)srcArray,srcOffset,1,(uintptr_t)dstHost,0,0,0,ByteCount,NULL);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyDtoA(CUarray dstArray, unsigned int dstOffset, CUdeviceptr_v1 srcDevice, unsigned int ByteCount)
 {
     TRACE("(%p, %u, %u, %u)\n", dstArray, dstOffset, srcDevice, ByteCount);
-    return pcuMemcpyDtoA(dstArray, dstOffset, srcDevice, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyDtoA(dstArray, dstOffset, srcDevice, ByteCount);
+    census_exit_count(&census_tok,CA_cuMemcpyDtoA,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyDtoA_v2(CUarray dstArray, size_t dstOffset, CUdeviceptr_v2 srcDevice, size_t ByteCount)
 {
     TRACE("(%p, %zu, " DEV_PTR ", %zu)\n", dstArray, dstOffset, srcDevice, ByteCount);
-    return pcuMemcpyDtoA_v2(dstArray, dstOffset, srcDevice, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyDtoA_v2(dstArray, dstOffset, srcDevice, ByteCount);
+    census_exit_count(&census_tok,CA_cuMemcpyDtoA_v2,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyDtoD(CUdeviceptr_v1 dstDevice, CUdeviceptr_v1 srcDevice, unsigned int ByteCount)
 {
     TRACE("(%u, %u, %u)\n", dstDevice, srcDevice, ByteCount);
-    return pcuMemcpyDtoD(dstDevice, srcDevice, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyDtoD(dstDevice, srcDevice, ByteCount);
+    census_exit_count(&census_tok,CA_cuMemcpyDtoD,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyDtoDAsync(CUdeviceptr dstDevice, CUdeviceptr srcDevice,
                                        unsigned int ByteCount, CUstream hStream)
 {
     TRACE("(" DEV_PTR ", " DEV_PTR ", %u, %p)\n", dstDevice, srcDevice, ByteCount, hStream);
-    return pcuMemcpyDtoDAsync(dstDevice, srcDevice, ByteCount, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyDtoDAsync(dstDevice, srcDevice, ByteCount, hStream);
+    census_exit_count(&census_tok,CA_cuMemcpyDtoDAsync,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyDtoDAsync_v2(CUdeviceptr dstDevice, CUdeviceptr srcDevice,
                                           size_t ByteCount, CUstream hStream)
 {
     TRACE("(" DEV_PTR ", " DEV_PTR ", %zu, %p)\n", dstDevice, srcDevice, ByteCount, hStream);
-    return pcuMemcpyDtoDAsync_v2(dstDevice, srcDevice, ByteCount, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyDtoDAsync_v2(dstDevice, srcDevice, ByteCount, hStream);
+    census_exit_count(&census_tok,CA_cuMemcpyDtoDAsync_v2,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyDtoD_v2(CUdeviceptr_v2 dstDevice, CUdeviceptr_v2 srcDevice, size_t ByteCount)
 {
     TRACE("(" DEV_PTR ", " DEV_PTR ", %zu)\n", dstDevice, srcDevice, ByteCount);
-    return pcuMemcpyDtoD_v2(dstDevice, srcDevice, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyDtoD_v2(dstDevice, srcDevice, ByteCount);
+    census_exit_count(&census_tok,CA_cuMemcpyDtoD_v2,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyDtoH(void *dstHost, CUdeviceptr_v1 srcDevice, unsigned int ByteCount)
 {
     TRACE("(%p, %u, %u)\n", dstHost, srcDevice, ByteCount);
-    return pcuMemcpyDtoH(dstHost, srcDevice, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpyDtoH(dstHost, srcDevice, ByteCount);
+    census_exit_transfer(&census_tok,CA_cuMemcpyDtoH,result,0,NULL,NULL,2,0,srcDevice,0,0,1,(uintptr_t)dstHost,0,0,0,ByteCount,NULL);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyDtoHAsync(void *dstHost, CUdeviceptr_v1 srcDevice, unsigned int ByteCount, CUstream hStream)
 {
     TRACE("(%p, %u, %u, %p)\n", dstHost, srcDevice, ByteCount, hStream);
-    return pcuMemcpyDtoHAsync(dstHost, srcDevice, ByteCount, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpyDtoHAsync(dstHost, srcDevice, ByteCount, hStream);
+    census_exit_transfer(&census_tok,CA_cuMemcpyDtoHAsync,result,CF_ASYNC,NULL,NULL,2,0,srcDevice,0,0,1,(uintptr_t)dstHost,0,0,0,ByteCount,hStream);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyDtoHAsync_v2(void *dstHost, CUdeviceptr_v2 srcDevice, size_t ByteCount, CUstream hStream)
 {
     TRACE("(%p, " DEV_PTR ", %zu, %p)\n", dstHost, srcDevice, ByteCount, hStream);
-    return pcuMemcpyDtoHAsync_v2(dstHost, srcDevice, ByteCount, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpyDtoHAsync_v2(dstHost, srcDevice, ByteCount, hStream);
+    census_exit_transfer(&census_tok,CA_cuMemcpyDtoHAsync_v2,result,CF_ASYNC,NULL,NULL,2,0,srcDevice,0,0,1,(uintptr_t)dstHost,0,0,0,ByteCount,hStream);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyDtoH_v2(void *dstHost, CUdeviceptr_v2 srcDevice, size_t ByteCount)
 {
     TRACE("(%p, " DEV_PTR ", %zu)\n", dstHost, srcDevice, ByteCount);
-    return pcuMemcpyDtoH_v2(dstHost, srcDevice, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpyDtoH_v2(dstHost, srcDevice, ByteCount);
+    census_exit_transfer(&census_tok,CA_cuMemcpyDtoH_v2,result,0,NULL,NULL,2,0,srcDevice,0,0,1,(uintptr_t)dstHost,0,0,0,ByteCount,NULL);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyHtoA(CUarray dstArray, size_t dstOffset, const void *srcHost, size_t ByteCount)
 {
     TRACE("(%p, %zu, %p, %zu)\n", dstArray, dstOffset, srcHost, ByteCount);
-    return pcuMemcpyHtoA(dstArray, dstOffset, srcHost, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyHtoA(dstArray, dstOffset, srcHost, ByteCount);
+    census_exit_count(&census_tok,CA_cuMemcpyHtoA,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyHtoAAsync(CUarray dstArray, unsigned int dstOffset, const void *srcHost,
                                        unsigned int ByteCount, CUstream hStream)
 {
     TRACE("(%p, %u, %p, %u, %p)\n", dstArray, dstOffset, srcHost, ByteCount, hStream);
-    return pcuMemcpyHtoAAsync(dstArray, dstOffset, srcHost, ByteCount, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyHtoAAsync(dstArray, dstOffset, srcHost, ByteCount, hStream);
+    census_exit_count(&census_tok,CA_cuMemcpyHtoAAsync,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyHtoAAsync_v2(CUarray dstArray, size_t dstOffset, const void *srcHost,
                                           size_t ByteCount, CUstream hStream)
 {
     TRACE("(%p, %zu, %p, %zu, %p)\n", dstArray, dstOffset, srcHost, ByteCount, hStream);
-    return pcuMemcpyHtoAAsync_v2(dstArray, dstOffset, srcHost, ByteCount, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyHtoAAsync_v2(dstArray, dstOffset, srcHost, ByteCount, hStream);
+    census_exit_count(&census_tok,CA_cuMemcpyHtoAAsync_v2,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyHtoA_v2(CUarray dstArray, size_t dstOffset, const void *srcHost, size_t ByteCount)
 {
     TRACE("(%p, %zu, %p, %zu)\n", dstArray, dstOffset, srcHost, ByteCount);
-    return pcuMemcpyHtoA_v2(dstArray, dstOffset, srcHost, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyHtoA_v2(dstArray, dstOffset, srcHost, ByteCount);
+    census_exit_count(&census_tok,CA_cuMemcpyHtoA_v2,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyHtoD(CUdeviceptr_v1 dstDevice, const void *srcHost, unsigned int ByteCount)
 {
     TRACE("(%u, %p, %u)\n", dstDevice, srcHost, ByteCount);
-    return pcuMemcpyHtoD(dstDevice, srcHost, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyHtoD(dstDevice, srcHost, ByteCount);
+    census_exit_count(&census_tok,CA_cuMemcpyHtoD,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyHtoDAsync(CUdeviceptr_v1 dstDevice, const void *srcHost, size_t ByteCount, CUstream hStream)
 {
     TRACE("(%u, %p, %zu, %p)\n", dstDevice, srcHost, ByteCount, hStream);
-    return pcuMemcpyHtoDAsync(dstDevice, srcHost, ByteCount, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyHtoDAsync(dstDevice, srcHost, ByteCount, hStream);
+    census_exit_count(&census_tok,CA_cuMemcpyHtoDAsync,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyHtoDAsync_v2(CUdeviceptr dstDevice, const void *srcHost, size_t ByteCount, CUstream hStream)
 {
     TRACE("(" DEV_PTR ", %p, %zu, %p)\n", dstDevice, srcHost, ByteCount, hStream);
-    return pcuMemcpyHtoDAsync_v2(dstDevice, srcHost, ByteCount, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyHtoDAsync_v2(dstDevice, srcHost, ByteCount, hStream);
+    census_exit_count(&census_tok,CA_cuMemcpyHtoDAsync_v2,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyHtoD_v2(CUdeviceptr_v2 dstDevice, const void *srcHost, size_t ByteCount)
 {
     TRACE("(" DEV_PTR ", %p, %zu)\n", dstDevice, srcHost, ByteCount);
-    return pcuMemcpyHtoD_v2(dstDevice, srcHost, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyHtoD_v2(dstDevice, srcHost, ByteCount);
+    census_exit_count(&census_tok,CA_cuMemcpyHtoD_v2,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyPeer(CUdeviceptr dstDevice, CUcontext dstContext, CUdeviceptr srcDevice,
                                   CUcontext srcContext, size_t ByteCount)
 {
     TRACE("(" DEV_PTR ", %p, " DEV_PTR ", %p, %zu)\n", dstDevice, dstContext, srcDevice, srcContext, ByteCount);
-    return pcuMemcpyPeer(dstDevice, dstContext, srcDevice, srcContext, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyPeer(dstDevice, dstContext, srcDevice, srcContext, ByteCount);
+    census_exit_count(&census_tok,CA_cuMemcpyPeer,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyPeerAsync(CUdeviceptr dstDevice, CUcontext dstContext, CUdeviceptr srcDevice,
                                        CUcontext srcContext, size_t ByteCount, CUstream hStream)
 {
     TRACE("(" DEV_PTR ", %p, " DEV_PTR ", %p, %zu, %p)\n", dstDevice, dstContext, srcDevice, srcContext, ByteCount, hStream);
-    return pcuMemcpyPeerAsync(dstDevice, dstContext, srcDevice, srcContext, ByteCount, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyPeerAsync(dstDevice, dstContext, srcDevice, srcContext, ByteCount, hStream);
+    census_exit_count(&census_tok,CA_cuMemcpyPeerAsync,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemsetD16(CUdeviceptr_v1 dstDevice, unsigned short us, unsigned int N)
@@ -3055,13 +3474,23 @@ CUresult WINAPI wine_cuStreamGetPriority(CUstream hStream, int *priority)
 CUresult WINAPI wine_cuStreamQuery(CUstream hStream)
 {
     TRACE("(%p)\n", hStream);
-    return pcuStreamQuery(hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuStreamQuery(hStream);
+    census_exit_sync(&census_tok,CA_cuStreamQuery,result,0,hStream,NULL);
+    return result;
 }
 
 CUresult WINAPI wine_cuStreamSynchronize(CUstream hStream)
 {
     TRACE("(%p)\n", hStream);
-    return pcuStreamSynchronize(hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuStreamSynchronize(hStream);
+    census_exit_sync(&census_tok,CA_cuStreamSynchronize,result,0,hStream,NULL);
+    return result;
 }
 
 CUresult WINAPI wine_cuStreamWaitEvent(CUstream hStream, CUevent hEvent, unsigned int Flags)
@@ -3346,11 +3775,22 @@ CUresult WINAPI wine_cuGLGetDevices_v2(unsigned int *pCudaDeviceCount, CUdevice 
     return pcuGLGetDevices_v2(pCudaDeviceCount, pCudaDevices, cudaDeviceCount, deviceList);
 }
 
-CUresult WINAPI wine_cuGraphicsResourceSetMapFlags_v2(CUgraphicsResource resource, unsigned int flags)
+static CUresult graphics_cuGraphicsResourceSetMapFlags_v2(CUgraphicsResource resource, unsigned int flags, CensusRelayInfo *census_info)
 {
-    int copy_result=cpu_resource(resource,2,NULL,flags,0); if(copy_result>=0) return copy_result;
+    int copy_result=cpu_resource(resource,2,NULL,flags,0,census_info); if(copy_result>=0) return copy_result;
     TRACE("(%p, %u)\n", resource, flags);
     return pcuGraphicsResourceSetMapFlags_v2(resource, flags);
+}
+
+CUresult WINAPI wine_cuGraphicsResourceSetMapFlags_v2(CUgraphicsResource resource, unsigned int flags)
+{
+    CensusToken census_tok;
+    CensusRelayInfo census_info={CB_FORWARDED};
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_GRAPHICS);
+    result=graphics_cuGraphicsResourceSetMapFlags_v2(resource, flags, &census_info);
+    census_exit_gfx(&census_tok,CA_cuGraphicsResourceSetMapFlags_v2,CG_SET_FLAGS,result,&census_info,(uintptr_t)resource,1,NULL,0,flags,0);
+    return result;
 }
 
 CUresult WINAPI wine_cuLinkAddData_v2(CUlinkState state, CUjitInputType type, void *data, size_t size, const char *name,
@@ -3370,7 +3810,12 @@ CUresult WINAPI wine_cuLinkCreate_v2(unsigned int numOptions, CUjit_option *opti
 CUresult WINAPI wine_cuMemHostRegister_v2(void *p, size_t bytesize, unsigned int Flags)
 {
     TRACE("(%p, %zu, %u)\n", p, bytesize, Flags);
-    return pcuMemHostRegister_v2(p, bytesize, Flags);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuMemHostRegister_v2(p, bytesize, Flags);
+    census_exit_alloc(&census_tok,CA_cuMemHostRegister_v2,result,CK_HOST_REGISTERED,(uintptr_t)p,bytesize,Flags,0,0,0,0,0);
+    return result;
 }
 
 CUresult WINAPI wine_cuOccupancyMaxActiveBlocksPerMultiprocessor(int *numBlocks, CUfunction func, int blockSize, size_t dynamicSMemSize)
@@ -3435,7 +3880,12 @@ CUresult WINAPI wine_cuDevicePrimaryCtxSetFlags(CUdevice dev, unsigned int flags
 CUresult WINAPI wine_cuEventRecord_ptsz(CUevent hEvent, CUstream hStream)
 {
     TRACE("(%p, %p)\n", hEvent, hStream);
-    return pcuEventRecord_ptsz(hEvent, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuEventRecord_ptsz(hEvent, hStream);
+    census_exit_sync(&census_tok,CA_cuEventRecord_ptsz,result,CF_PER_THREAD,hStream,hEvent);
+    return result;
 }
 
 CUresult WINAPI wine_cuGLMapBufferObjectAsync_v2_ptsz(CUdeviceptr *dptr, size_t *size, GLuint buffer, CUstream hStream)
@@ -3450,20 +3900,42 @@ CUresult WINAPI wine_cuGLMapBufferObject_v2_ptds(CUdeviceptr *dptr, size_t *size
     return pcuGLMapBufferObject_v2_ptds(dptr, size, buffer);
 }
 
-CUresult WINAPI wine_cuGraphicsMapResources_ptsz(unsigned int count, CUgraphicsResource *resources, CUstream hStream)
+static CUresult graphics_cuGraphicsMapResources_ptsz(unsigned int count, CUgraphicsResource *resources, CUstream hStream, CensusRelayInfo *census_info)
 {
-    int copy_result=cpu_map(count,resources,hStream,FALSE,TRUE); if(copy_result>=0) return copy_result;
+    int copy_result=cpu_map(count,resources,hStream,FALSE,TRUE,census_info); if(copy_result>=0) return copy_result;
     TRACE("(%u, %p, %p)\n", count, resources, hStream);
     zluda_d3d11_blit_on_map(count, (void**)resources);
     return pcuGraphicsMapResources_ptsz(count, resources, hStream);
 }
 
-CUresult WINAPI wine_cuGraphicsUnmapResources_ptsz(unsigned int count, CUgraphicsResource *resources, CUstream hStream)
+CUresult WINAPI wine_cuGraphicsMapResources_ptsz(unsigned int count, CUgraphicsResource *resources, CUstream hStream)
 {
-    int copy_result=cpu_map(count,resources,hStream,TRUE,TRUE); if(copy_result>=0) return copy_result;
+    CensusToken census_tok;
+    CensusRelayInfo census_info={CB_FORWARDED};
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_GRAPHICS);
+    result=graphics_cuGraphicsMapResources_ptsz(count, resources, hStream, &census_info);
+    census_exit_gfx(&census_tok,CA_cuGraphicsMapResources_ptsz,CG_MAP,result,&census_info,(uintptr_t)resources,count,hStream,0,0,0);
+    return result;
+}
+
+static CUresult graphics_cuGraphicsUnmapResources_ptsz(unsigned int count, CUgraphicsResource *resources, CUstream hStream, CensusRelayInfo *census_info)
+{
+    int copy_result=cpu_map(count,resources,hStream,TRUE,TRUE,census_info); if(copy_result>=0) return copy_result;
     TRACE("(%u, %p, %p)\n", count, resources, hStream);
     zluda_d3d11_blit_on_unmap(count, (void**)resources);
     return pcuGraphicsUnmapResources_ptsz(count, resources, hStream);
+}
+
+CUresult WINAPI wine_cuGraphicsUnmapResources_ptsz(unsigned int count, CUgraphicsResource *resources, CUstream hStream)
+{
+    CensusToken census_tok;
+    CensusRelayInfo census_info={CB_FORWARDED};
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_GRAPHICS);
+    result=graphics_cuGraphicsUnmapResources_ptsz(count, resources, hStream, &census_info);
+    census_exit_gfx(&census_tok,CA_cuGraphicsUnmapResources_ptsz,CG_UNMAP,result,&census_info,(uintptr_t)resources,count,hStream,0,0,0);
+    return result;
 }
 
 CUresult WINAPI wine_cuLaunchKernel_ptsz(CUfunction f, unsigned int gridDimX, unsigned int gridDimY, unsigned int gridDimZ,
@@ -3479,150 +3951,270 @@ CUresult WINAPI wine_cuLaunchKernel_ptsz(CUfunction f, unsigned int gridDimX, un
 CUresult WINAPI wine_cuMemcpy2DAsync_v2_ptsz(const CUDA_MEMCPY2D *pCopy, CUstream hStream)
 {
     TRACE("(%p, %p)\n", pCopy, hStream);
-    return pcuMemcpy2DAsync_v2_ptsz(pCopy, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpy2DAsync_v2_ptsz(pCopy, hStream);
+    census_exit_transfer(&census_tok,CA_cuMemcpy2DAsync_v2_ptsz,result,CF_ASYNC|CF_PER_THREAD,NULL,pCopy,0,0,0,0,0,0,0,0,0,0,0,hStream);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpy2DUnaligned_v2_ptds(const CUDA_MEMCPY2D *pCopy)
 {
     TRACE("(%p)\n", pCopy);
-    return pcuMemcpy2DUnaligned_v2_ptds(pCopy);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpy2DUnaligned_v2_ptds(pCopy);
+    census_exit_transfer(&census_tok,CA_cuMemcpy2DUnaligned_v2_ptds,result,CF_PER_THREAD,NULL,pCopy,0,0,0,0,0,0,0,0,0,0,0,NULL);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpy2D_v2_ptds(const CUDA_MEMCPY2D *pCopy)
 {
     TRACE("(%p)\n", pCopy);
-    return pcuMemcpy2D_v2_ptds(pCopy);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpy2D_v2_ptds(pCopy);
+    census_exit_transfer(&census_tok,CA_cuMemcpy2D_v2_ptds,result,CF_PER_THREAD,NULL,pCopy,0,0,0,0,0,0,0,0,0,0,0,NULL);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpy3DAsync_v2_ptsz(const CUDA_MEMCPY3D *pCopy, CUstream hStream)
 {
     TRACE("(%p, %p)\n", pCopy, hStream);
-    return pcuMemcpy3DAsync_v2_ptsz(pCopy, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpy3DAsync_v2_ptsz(pCopy, hStream);
+    census_exit_transfer(&census_tok,CA_cuMemcpy3DAsync_v2_ptsz,result,CF_ASYNC|CF_PER_THREAD,pCopy,NULL,0,0,0,0,0,0,0,0,0,0,0,hStream);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpy3DPeerAsync_ptsz(const CUDA_MEMCPY3D_PEER *pCopy, CUstream hStream)
 {
     TRACE("(%p, %p)\n", pCopy, hStream);
-    return pcuMemcpy3DPeerAsync_ptsz(pCopy, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpy3DPeerAsync_ptsz(pCopy, hStream);
+    census_exit_count(&census_tok,CA_cuMemcpy3DPeerAsync_ptsz,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpy3DPeer_ptds(const CUDA_MEMCPY3D_PEER *pCopy)
 {
     TRACE("(%p)\n", pCopy);
-    return pcuMemcpy3DPeer_ptds(pCopy);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpy3DPeer_ptds(pCopy);
+    census_exit_count(&census_tok,CA_cuMemcpy3DPeer_ptds,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpy3D_v2_ptds(const CUDA_MEMCPY3D *pCopy)
 {
     TRACE("(%p)\n", pCopy);
-    return pcuMemcpy3D_v2_ptds(pCopy);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpy3D_v2_ptds(pCopy);
+    census_exit_transfer(&census_tok,CA_cuMemcpy3D_v2_ptds,result,CF_PER_THREAD,pCopy,NULL,0,0,0,0,0,0,0,0,0,0,0,NULL);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyAsync_ptsz(CUdeviceptr dst, CUdeviceptr src, size_t ByteCount, CUstream hStream)
 {
     TRACE("(" DEV_PTR ", " DEV_PTR ", %zu, %p)\n", dst, src, ByteCount, hStream);
-    return pcuMemcpyAsync_ptsz(dst, src, ByteCount, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpyAsync_ptsz(dst, src, ByteCount, hStream);
+    census_exit_transfer(&census_tok,CA_cuMemcpyAsync_ptsz,result,CF_UNIFIED|CF_ASYNC|CF_PER_THREAD,NULL,NULL,4,0,src,0,0,4,0,dst,0,0,ByteCount,hStream);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyAtoA_v2_ptds(CUarray dstArray, size_t dstOffset, CUarray srcArray,
                                           size_t srcOffset, size_t ByteCount)
 {
     TRACE("(%p, %zu, %p, %zu, %zu)\n", dstArray, dstOffset, srcArray, srcOffset, ByteCount);
-    return pcuMemcpyAtoA_v2_ptds(dstArray, dstOffset, srcArray, srcOffset, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyAtoA_v2_ptds(dstArray, dstOffset, srcArray, srcOffset, ByteCount);
+    census_exit_count(&census_tok,CA_cuMemcpyAtoA_v2_ptds,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyAtoD_v2_ptds(CUdeviceptr dstDevice, CUarray srcArray, size_t srcOffset, size_t ByteCount)
 {
     TRACE("(" DEV_PTR ", %p, %zu, %zu)\n", dstDevice, srcArray, srcOffset, ByteCount);
-    return pcuMemcpyAtoD_v2_ptds(dstDevice, srcArray, srcOffset, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyAtoD_v2_ptds(dstDevice, srcArray, srcOffset, ByteCount);
+    census_exit_count(&census_tok,CA_cuMemcpyAtoD_v2_ptds,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyAtoHAsync_v2_ptsz(void *dstHost, CUarray srcArray, size_t srcOffset, size_t ByteCount, CUstream hStream)
 {
     TRACE("(%p, %p, %zu, %zu, %p)\n", dstHost, srcArray, srcOffset, ByteCount, hStream);
-    return pcuMemcpyAtoHAsync_v2_ptsz(dstHost, srcArray, srcOffset, ByteCount, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpyAtoHAsync_v2_ptsz(dstHost, srcArray, srcOffset, ByteCount, hStream);
+    census_exit_transfer(&census_tok,CA_cuMemcpyAtoHAsync_v2_ptsz,result,CF_ASYNC|CF_PER_THREAD,NULL,NULL,3,0,0,(uintptr_t)srcArray,srcOffset,1,(uintptr_t)dstHost,0,0,0,ByteCount,hStream);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyAtoH_v2_ptds(void *dstHost, CUarray srcArray, size_t srcOffset, size_t ByteCount)
 {
     TRACE("(%p, %p, %zu, %zu)\n", dstHost, srcArray, srcOffset, ByteCount);
-    return pcuMemcpyAtoH_v2_ptds(dstHost, srcArray, srcOffset, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpyAtoH_v2_ptds(dstHost, srcArray, srcOffset, ByteCount);
+    census_exit_transfer(&census_tok,CA_cuMemcpyAtoH_v2_ptds,result,0|CF_PER_THREAD,NULL,NULL,3,0,0,(uintptr_t)srcArray,srcOffset,1,(uintptr_t)dstHost,0,0,0,ByteCount,NULL);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyDtoA_v2_ptds(CUarray dstArray, size_t dstOffset, CUdeviceptr_v2 srcDevice, size_t ByteCount)
 {
     TRACE("(%p, %zu, " DEV_PTR ", %zu)\n", dstArray, dstOffset, srcDevice, ByteCount);
-    return pcuMemcpyDtoA_v2_ptds(dstArray, dstOffset, srcDevice, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyDtoA_v2_ptds(dstArray, dstOffset, srcDevice, ByteCount);
+    census_exit_count(&census_tok,CA_cuMemcpyDtoA_v2_ptds,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyDtoDAsync_v2_ptsz(CUdeviceptr_v2 dstDevice, CUdeviceptr_v2 srcDevice,
                                                size_t ByteCount, CUstream hStream)
 {
     TRACE("(" DEV_PTR ", " DEV_PTR ", %zu, %p)\n", dstDevice, srcDevice, ByteCount, hStream);
-    return pcuMemcpyDtoDAsync_v2_ptsz(dstDevice, srcDevice, ByteCount, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyDtoDAsync_v2_ptsz(dstDevice, srcDevice, ByteCount, hStream);
+    census_exit_count(&census_tok,CA_cuMemcpyDtoDAsync_v2_ptsz,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyDtoD_v2_ptds(CUdeviceptr_v2 dstDevice, CUdeviceptr_v2 srcDevice, size_t ByteCount)
 {
     TRACE("(" DEV_PTR ", " DEV_PTR ", %zu)\n", dstDevice, srcDevice, ByteCount);
-    return pcuMemcpyDtoD_v2_ptds(dstDevice, srcDevice, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyDtoD_v2_ptds(dstDevice, srcDevice, ByteCount);
+    census_exit_count(&census_tok,CA_cuMemcpyDtoD_v2_ptds,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyDtoHAsync_v2_ptsz(void *dstHost, CUdeviceptr_v2 srcDevice, size_t ByteCount, CUstream hStream)
 {
     TRACE("(%p, " DEV_PTR ", %zu, %p)\n", dstHost, srcDevice, ByteCount, hStream);
-    return pcuMemcpyDtoHAsync_v2_ptsz(dstHost, srcDevice, ByteCount, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpyDtoHAsync_v2_ptsz(dstHost, srcDevice, ByteCount, hStream);
+    census_exit_transfer(&census_tok,CA_cuMemcpyDtoHAsync_v2_ptsz,result,CF_ASYNC|CF_PER_THREAD,NULL,NULL,2,0,srcDevice,0,0,1,(uintptr_t)dstHost,0,0,0,ByteCount,hStream);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyDtoH_v2_ptds(void *dstHost, CUdeviceptr_v2 srcDevice, size_t ByteCount)
 {
     TRACE("(%p, " DEV_PTR ", %zu)\n", dstHost, srcDevice, ByteCount);
-    return pcuMemcpyDtoH_v2_ptds(dstHost, srcDevice, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpyDtoH_v2_ptds(dstHost, srcDevice, ByteCount);
+    census_exit_transfer(&census_tok,CA_cuMemcpyDtoH_v2_ptds,result,0|CF_PER_THREAD,NULL,NULL,2,0,srcDevice,0,0,1,(uintptr_t)dstHost,0,0,0,ByteCount,NULL);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyHtoAAsync_v2_ptsz(CUarray dstArray, size_t dstOffset, const void *srcHost,
                                                size_t ByteCount, CUstream hStream)
 {
     TRACE("(%p, %zu, %p, %zu, %p)\n", dstArray, dstOffset, srcHost, ByteCount, hStream);
-    return pcuMemcpyHtoAAsync_v2_ptsz(dstArray, dstOffset, srcHost, ByteCount, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyHtoAAsync_v2_ptsz(dstArray, dstOffset, srcHost, ByteCount, hStream);
+    census_exit_count(&census_tok,CA_cuMemcpyHtoAAsync_v2_ptsz,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyHtoA_v2_ptds(CUarray dstArray, size_t dstOffset, const void *srcHost, size_t ByteCount)
 {
     TRACE("(%p, %zu, %p, %zu)\n", dstArray, dstOffset, srcHost, ByteCount);
-    return pcuMemcpyHtoA_v2_ptds(dstArray, dstOffset, srcHost, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyHtoA_v2_ptds(dstArray, dstOffset, srcHost, ByteCount);
+    census_exit_count(&census_tok,CA_cuMemcpyHtoA_v2_ptds,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyHtoDAsync_v2_ptsz(CUdeviceptr dstDevice, const void *srcHost, size_t ByteCount, CUstream hStream)
 {
     TRACE("(" DEV_PTR ", %p, %zu, %p)\n", dstDevice, srcHost, ByteCount, hStream);
-    return pcuMemcpyHtoDAsync_v2_ptsz(dstDevice, srcHost, ByteCount, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyHtoDAsync_v2_ptsz(dstDevice, srcHost, ByteCount, hStream);
+    census_exit_count(&census_tok,CA_cuMemcpyHtoDAsync_v2_ptsz,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyHtoD_v2_ptds(CUdeviceptr dstDevice, const void *srcHost, size_t ByteCount)
 {
     TRACE("(" DEV_PTR ", %p, %zu)\n", dstDevice, srcHost, ByteCount);
-    return pcuMemcpyHtoD_v2_ptds(dstDevice, srcHost, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyHtoD_v2_ptds(dstDevice, srcHost, ByteCount);
+    census_exit_count(&census_tok,CA_cuMemcpyHtoD_v2_ptds,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyPeerAsync_ptsz(CUdeviceptr dstDevice, CUcontext dstContext, CUdeviceptr srcDevice,
                                             CUcontext srcContext, size_t ByteCount, CUstream hStream)
 {
     TRACE("(" DEV_PTR ", %p, " DEV_PTR ", %p, %zu, %p)\n", dstDevice, dstContext, srcDevice, srcContext, ByteCount, hStream);
-    return pcuMemcpyPeerAsync_ptsz(dstDevice, dstContext, srcDevice, srcContext, ByteCount, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyPeerAsync_ptsz(dstDevice, dstContext, srcDevice, srcContext, ByteCount, hStream);
+    census_exit_count(&census_tok,CA_cuMemcpyPeerAsync_ptsz,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyPeer_ptds(CUdeviceptr dstDevice, CUcontext dstContext, CUdeviceptr srcDevice,
                                        CUcontext srcContext, size_t ByteCount)
 {
     TRACE("(" DEV_PTR ", %p, " DEV_PTR ", %p, %zu)\n", dstDevice, dstContext, srcDevice, srcContext, ByteCount);
-    return pcuMemcpyPeer_ptds(dstDevice, dstContext, srcDevice, srcContext, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyPeer_ptds(dstDevice, dstContext, srcDevice, srcContext, ByteCount);
+    census_exit_count(&census_tok,CA_cuMemcpyPeer_ptds,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpy_ptds(CUdeviceptr_v2 dst, CUdeviceptr_v2 src, size_t ByteCount)
 {
     TRACE("(" DEV_PTR ", " DEV_PTR ", %zu)\n", dst, src, ByteCount);
-    return pcuMemcpy_ptds(dst, src, ByteCount);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuMemcpy_ptds(dst, src, ByteCount);
+    census_exit_transfer(&census_tok,CA_cuMemcpy_ptds,result,CF_UNIFIED|CF_PER_THREAD,NULL,NULL,4,0,src,0,0,4,0,dst,0,0,ByteCount,NULL);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemsetD16Async_ptsz(CUdeviceptr dstDevice, unsigned short us, size_t N, CUstream hStream)
@@ -3749,13 +4341,23 @@ CUresult WINAPI wine_cuStreamGetPriority_ptsz(CUstream hStream, int *priority)
 CUresult WINAPI wine_cuStreamQuery_ptsz(CUstream hStream)
 {
     TRACE("(%p)\n", hStream);
-    return pcuStreamQuery_ptsz(hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuStreamQuery_ptsz(hStream);
+    census_exit_sync(&census_tok,CA_cuStreamQuery_ptsz,result,CF_PER_THREAD,hStream,NULL);
+    return result;
 }
 
 CUresult WINAPI wine_cuStreamSynchronize_ptsz(CUstream hStream)
 {
     TRACE("(%p)\n", hStream);
-    return pcuStreamSynchronize_ptsz(hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuStreamSynchronize_ptsz(hStream);
+    census_exit_sync(&census_tok,CA_cuStreamSynchronize_ptsz,result,CF_PER_THREAD,hStream,NULL);
+    return result;
 }
 
 CUresult WINAPI wine_cuStreamWaitEvent_ptsz(CUstream hStream, CUevent hEvent, unsigned int Flags)
@@ -4527,25 +5129,45 @@ CUresult WINAPI wine_cuMemImportFromShareableHandle(void* handle, void* osHandle
 CUresult WINAPI wine_cuMemAllocAsync(CUdeviceptr_v2 *dptr, size_t bytesize, CUstream hStream)
 {
     TRACE("(%p, %zu, %p)\n", dptr, bytesize, hStream);
-    return pcuMemAllocAsync(dptr, bytesize, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuMemAllocAsync(dptr, bytesize, hStream);
+    census_exit_alloc(&census_tok,CA_cuMemAllocAsync,result,CK_DEVICE_ASYNC,!result&&dptr?*dptr:0,bytesize,0,(uintptr_t)hStream,0,0,0,0);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemAllocAsync_ptsz(CUdeviceptr_v2 *dptr, size_t bytesize, CUstream hStream)
 {
     TRACE("(%p, %zu, %p)\n", dptr, bytesize, hStream);
-    return pcuMemAllocAsync_ptsz(dptr, bytesize, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuMemAllocAsync_ptsz(dptr, bytesize, hStream);
+    census_exit_alloc(&census_tok,CA_cuMemAllocAsync_ptsz,result,CK_DEVICE_ASYNC,!result&&dptr?*dptr:0,bytesize,0,(uintptr_t)hStream,0,0,0,0);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemFreeAsync(CUdeviceptr_v2 dptr, CUstream hStream)
 {
     TRACE("(" DEV_PTR ", %p)\n", dptr, hStream);
-    return pcuMemFreeAsync(dptr, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuMemFreeAsync(dptr, hStream);
+    census_exit_free(&census_tok,CA_cuMemFreeAsync,result,CK_DEVICE,CK_MANAGED,dptr,TRUE,(uintptr_t)hStream);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemFreeAsync_ptsz(CUdeviceptr_v2 dptr, CUstream hStream)
 {
     TRACE("(" DEV_PTR ", %p)\n", dptr, hStream);
-    return pcuMemFreeAsync_ptsz(dptr, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuMemFreeAsync_ptsz(dptr, hStream);
+    census_exit_free(&census_tok,CA_cuMemFreeAsync_ptsz,result,CK_DEVICE,CK_MANAGED,dptr,TRUE,(uintptr_t)hStream);
+    return result;
 }
 
 CUresult WINAPI wine_cuGraphAddMemAllocNode(CUgraphNode *phGraphNode, CUgraph hGraph, const CUgraphNode *dependencies, size_t numDependencies, CUDA_NODE_PARAMS *nodeParams)
@@ -4647,13 +5269,23 @@ CUresult WINAPI wine_cuCtxResetPersistingL2Cache(void)
 CUresult WINAPI wine_cuMemAllocFromPoolAsync(CUdeviceptr_v2 *dptr, size_t bytesize, CUmemoryPool pool, CUstream hStream)
 {
     TRACE("(%p, %zu, %p, %p)\n", dptr, bytesize, pool, hStream);
-    return pcuMemAllocFromPoolAsync(dptr, bytesize, pool, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuMemAllocFromPoolAsync(dptr, bytesize, pool, hStream);
+    census_exit_alloc(&census_tok,CA_cuMemAllocFromPoolAsync,result,CK_DEVICE_ASYNC,!result&&dptr?*dptr:0,bytesize,0,(uintptr_t)hStream,0,0,0,0);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemAllocFromPoolAsync_ptsz(CUdeviceptr_v2 *dptr, size_t bytesize, CUmemoryPool pool, CUstream hStream)
 {
     TRACE("(%p, %zu, %p, %p)\n", dptr, bytesize, pool, hStream);
-    return pcuMemAllocFromPoolAsync_ptsz(dptr, bytesize, pool, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_LEDGER);
+    result=pcuMemAllocFromPoolAsync_ptsz(dptr, bytesize, pool, hStream);
+    census_exit_alloc(&census_tok,CA_cuMemAllocFromPoolAsync_ptsz,result,CK_DEVICE_ASYNC,!result&&dptr?*dptr:0,bytesize,0,(uintptr_t)hStream,0,0,0,0);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemPoolTrimTo(CUmemoryPool pool, size_t minBytesToKeep)
@@ -4737,13 +5369,23 @@ CUresult WINAPI wine_cuMipmappedArrayGetSparseProperties(void *sparseProperties,
 CUresult WINAPI wine_cuEventRecordWithFlags(CUevent hEvent, CUstream hStream, unsigned int flags)
 {
     TRACE("(%p, %p, %d)\n", hEvent, hStream, flags);
-    return pcuEventRecordWithFlags(hEvent, hStream, flags);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuEventRecordWithFlags(hEvent, hStream, flags);
+    census_exit_sync(&census_tok,CA_cuEventRecordWithFlags,result,0,hStream,hEvent);
+    return result;
 }
 
 CUresult WINAPI wine_cuEventRecordWithFlags_ptsz(CUevent hEvent, CUstream hStream, unsigned int flags)
 {
     TRACE("(%p, %p, %d)\n", hEvent, hStream, flags);
-    return pcuEventRecordWithFlags_ptsz(hEvent, hStream, flags);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuEventRecordWithFlags_ptsz(hEvent, hStream, flags);
+    census_exit_sync(&census_tok,CA_cuEventRecordWithFlags_ptsz,result,CF_PER_THREAD,hStream,hEvent);
+    return result;
 }
 
 CUresult WINAPI wine_cuStreamCopyAttributes(CUstream dstStream, CUstream srcStream)
@@ -5849,28 +6491,48 @@ CUresult WINAPI wine_cuMemcpyBatchAsync(CUdeviceptr* dsts, CUdeviceptr* srcs, si
 {
     TRACE("(%p, %p, %p, %zu, %p, %p, %zu, %p, %p)\n", dsts, srcs, sizes, count, attrs, attrsIdxs, numAttrs, failIdx, hStream);
     CHECK_FUNCPTR(cuMemcpyBatchAsync);
-    return pcuMemcpyBatchAsync(dsts, srcs, sizes, count, attrs, attrsIdxs, numAttrs, failIdx, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyBatchAsync(dsts, srcs, sizes, count, attrs, attrsIdxs, numAttrs, failIdx, hStream);
+    census_exit_count(&census_tok,CA_cuMemcpyBatchAsync,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyBatchAsync_ptsz(CUdeviceptr* dsts, CUdeviceptr* srcs, size_t* sizes, size_t count, CUmemcpyAttributes* attrs, size_t* attrsIdxs, size_t numAttrs, size_t* failIdx, CUstream hStream)
 {
     TRACE("(%p, %p, %p, %zu, %p, %p, %zu, %p, %p)\n", dsts, srcs, sizes, count, attrs, attrsIdxs, numAttrs, failIdx, hStream);
     CHECK_FUNCPTR(cuMemcpyBatchAsync_ptsz);
-    return pcuMemcpyBatchAsync_ptsz(dsts, srcs, sizes, count, attrs, attrsIdxs, numAttrs, failIdx, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyBatchAsync_ptsz(dsts, srcs, sizes, count, attrs, attrsIdxs, numAttrs, failIdx, hStream);
+    census_exit_count(&census_tok,CA_cuMemcpyBatchAsync_ptsz,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpy3DBatchAsync(size_t numOps, CUDA_MEMCPY3D_BATCH_OP* opList, size_t* failIdx, unsigned long long flags, CUstream hStream)
 {
     TRACE("(%zu, %p, %p, %llu, %p)\n", numOps, opList, failIdx, flags, hStream);
     CHECK_FUNCPTR(cuMemcpy3DBatchAsync);
-    return pcuMemcpy3DBatchAsync(numOps, opList, failIdx, flags, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpy3DBatchAsync(numOps, opList, failIdx, flags, hStream);
+    census_exit_count(&census_tok,CA_cuMemcpy3DBatchAsync,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpy3DBatchAsync_ptsz(size_t numOps, CUDA_MEMCPY3D_BATCH_OP* opList, size_t* failIdx, unsigned long long flags, CUstream hStream)
 {
     TRACE("(%zu, %p, %p, %llu, %p)\n", numOps, opList, failIdx, flags, hStream);
     CHECK_FUNCPTR(cuMemcpy3DBatchAsync_ptsz);
-    return pcuMemcpy3DBatchAsync_ptsz(numOps, opList, failIdx, flags, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpy3DBatchAsync_ptsz(numOps, opList, failIdx, flags, hStream);
+    census_exit_count(&census_tok,CA_cuMemcpy3DBatchAsync_ptsz,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuStreamGetDevice(CUstream hStream, CUdevice* device)
@@ -6039,35 +6701,60 @@ CUresult WINAPI wine_cuCtxSynchronize_v2(CUcontext ctx)
 {
     TRACE("(%p)\n", ctx);
     CHECK_FUNCPTR(cuCtxSynchronize_v2);
-    return pcuCtxSynchronize_v2(ctx);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_WINDOWED);
+    result=pcuCtxSynchronize_v2(ctx);
+    census_exit_sync(&census_tok,CA_cuCtxSynchronize_v2,result,0,NULL,NULL);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyBatchAsync_v2(CUdeviceptr_v2* dsts, CUdeviceptr_v2* srcs, size_t* sizes, size_t count, CUmemcpyAttributes_v1* attrs, size_t* attrIdxs, size_t numAttrs, CUstream hStream)
 {
     TRACE("(%p, %p, %p, %zu, %p, %p, %zu, %p)\n", dsts, srcs, sizes, count, attrs, attrIdxs, numAttrs, hStream);
     CHECK_FUNCPTR(cuMemcpyBatchAsync_v2);
-    return pcuMemcpyBatchAsync_v2(dsts, srcs, sizes, count, attrs, attrIdxs, numAttrs, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyBatchAsync_v2(dsts, srcs, sizes, count, attrs, attrIdxs, numAttrs, hStream);
+    census_exit_count(&census_tok,CA_cuMemcpyBatchAsync_v2,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpyBatchAsync_v2_ptsz(CUdeviceptr_v2* dsts, CUdeviceptr_v2* srcs, size_t* sizes, size_t count, CUmemcpyAttributes_v1* attrs, size_t* attrIdxs, size_t numAttrs, CUstream hStream)
 {
     TRACE("(%p, %p, %p, %zu, %p, %p, %zu, %p)\n", dsts, srcs, sizes, count, attrs, attrIdxs, numAttrs, hStream);
     CHECK_FUNCPTR(cuMemcpyBatchAsync_v2_ptsz);
-    return pcuMemcpyBatchAsync_v2_ptsz(dsts, srcs, sizes, count, attrs, attrIdxs, numAttrs, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyBatchAsync_v2_ptsz(dsts, srcs, sizes, count, attrs, attrIdxs, numAttrs, hStream);
+    census_exit_count(&census_tok,CA_cuMemcpyBatchAsync_v2_ptsz,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpy3DBatchAsync_v2(size_t numParams, CUDA_MEMCPY3D_BATCH_OP_v1* opList, unsigned long long flags, CUstream hStream)
 {
     TRACE("(%zu, %p, %llu, %p)\n", numParams, opList, flags, hStream);
     CHECK_FUNCPTR(cuMemcpy3DBatchAsync_v2);
-    return pcuMemcpy3DBatchAsync_v2(numParams, opList, flags, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpy3DBatchAsync_v2(numParams, opList, flags, hStream);
+    census_exit_count(&census_tok,CA_cuMemcpy3DBatchAsync_v2,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpy3DBatchAsync_v2_ptsz(size_t numParams, CUDA_MEMCPY3D_BATCH_OP_v1* opList, unsigned long long flags, CUstream hStream)
 {
     TRACE("(%zu, %p, %llu, %p)\n", numParams, opList, flags, hStream);
     CHECK_FUNCPTR(cuMemcpy3DBatchAsync_v2_ptsz);
-    return pcuMemcpy3DBatchAsync_v2_ptsz(numParams, opList, flags, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpy3DBatchAsync_v2_ptsz(numParams, opList, flags, hStream);
+    census_exit_count(&census_tok,CA_cuMemcpy3DBatchAsync_v2_ptsz,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemGetDefaultMemPool(CUmemoryPool* pool_out, CUmemLocation* location, CUmemAllocationType type)
@@ -6214,14 +6901,24 @@ CUresult WINAPI wine_cuMemcpyWithAttributesAsync_ptsz(CUdeviceptr_v2 dst, CUdevi
 {
     TRACE("(" DEV_PTR ", " DEV_PTR ", %zu, %p, %p)\n", dst, src, size, attr, hStream);
     CHECK_FUNCPTR(cuMemcpyWithAttributesAsync_ptsz);
-    return pcuMemcpyWithAttributesAsync_ptsz(dst, src, size, attr, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyWithAttributesAsync_ptsz(dst, src, size, attr, hStream);
+    census_exit_count(&census_tok,CA_cuMemcpyWithAttributesAsync_ptsz,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpy3DWithAttributesAsync_ptsz(CUDA_MEMCPY3D_BATCH_OP_v1* op, unsigned long long flags, CUstream hStream)
 {
     TRACE("(%p, %llu, %p)\n", op, flags, hStream);
     CHECK_FUNCPTR(cuMemcpy3DWithAttributesAsync_ptsz);
-    return pcuMemcpy3DWithAttributesAsync_ptsz(op, flags, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpy3DWithAttributesAsync_ptsz(op, flags, hStream);
+    census_exit_count(&census_tok,CA_cuMemcpy3DWithAttributesAsync_ptsz,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuStreamBeginCaptureToCig(CUstream hStream, CUstreamCigCaptureParams* streamCigCaptureParams)
@@ -6270,14 +6967,24 @@ CUresult WINAPI wine_cuMemcpyWithAttributesAsync(CUdeviceptr_v2 dst, CUdeviceptr
 {
     TRACE("(" DEV_PTR ", " DEV_PTR ", %zu, %p, %p)\n", dst, src, size, attr, hStream);
     CHECK_FUNCPTR(cuMemcpyWithAttributesAsync);
-    return pcuMemcpyWithAttributesAsync(dst, src, size, attr, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpyWithAttributesAsync(dst, src, size, attr, hStream);
+    census_exit_count(&census_tok,CA_cuMemcpyWithAttributesAsync,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuMemcpy3DWithAttributesAsync(CUDA_MEMCPY3D_BATCH_OP_v1* op, unsigned long long flags, CUstream hStream)
 {
     TRACE("(%p, %llu, %p)\n", op, flags, hStream);
     CHECK_FUNCPTR(cuMemcpy3DWithAttributesAsync);
-    return pcuMemcpy3DWithAttributesAsync(op, flags, hStream);
+    CensusToken census_tok;
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_COUNT);
+    result=pcuMemcpy3DWithAttributesAsync(op, flags, hStream);
+    census_exit_count(&census_tok,CA_cuMemcpy3DWithAttributesAsync,result);
+    return result;
 }
 
 CUresult WINAPI wine_cuKernelGetParamCount(CUkernel kernel, size_t* paramCount)
@@ -6405,9 +7112,8 @@ CUresult WINAPI wine_cuD3D11GetDevice(CUdevice *pCudaDevice, IDXGIAdapter *pAdap
     return pcuDeviceGet(pCudaDevice, 0);
 }
 
-CUresult WINAPI wine_cuGraphicsD3D11RegisterResource(CUgraphicsResource *pCudaResource, ID3D11Resource *pD3DResource, unsigned int Flags)
+static CUresult d3d11_register_forward(CUgraphicsResource *pCudaResource, ID3D11Resource *pD3DResource, unsigned int Flags)
 {
-    if(cpu_copy_enabled()) return cpu_register(pCudaResource,pD3DResource,Flags);
     /* P0 probe (ZLUDA D3D11 interop investigation) — identify what the app is
      * actually trying to register (buffer? texture? mip count?) before forwarding
      * to libcuda.so. COM introspection happens HERE on the PE side because the
@@ -6525,6 +7231,20 @@ CUresult WINAPI wine_cuGraphicsD3D11RegisterResource(CUgraphicsResource *pCudaRe
     return CUDA_ERROR_NOT_SUPPORTED;
 }
 
+CUresult WINAPI wine_cuGraphicsD3D11RegisterResource(CUgraphicsResource *pCudaResource, ID3D11Resource *pD3DResource, unsigned int Flags)
+{
+    CensusToken census_tok;
+    CensusRelayInfo census_info={CB_FORWARDED};
+    BOOL cpu_copy=cpu_copy_enabled();
+    CUresult result;
+    census_enter(&census_tok,CENSUS_ROLE_GRAPHICS);
+    result=cpu_copy?cpu_register(pCudaResource,pD3DResource,Flags,&census_info)
+                   :d3d11_register_forward(pCudaResource,pD3DResource,Flags);
+    census_exit_gfx(&census_tok,CA_cuGraphicsD3D11RegisterResource,CG_REGISTER,result,&census_info,
+                    !result&&pCudaResource?(uintptr_t)*pCudaResource:0,1,NULL,(uintptr_t)pD3DResource,Flags,census_info.array);
+    return result;
+}
+
 CUresult WINAPI wine_cuD3D11CtxCreate(CUcontext* pCtx, CUdevice* pCudaDevice, unsigned int Flags, ID3D11Device* pD3DDevice)
 {
     FIXME("(%p, %p, %u, %p) - semi-stub\n", pCtx, pCudaDevice, Flags, pD3DDevice);
@@ -6592,7 +7312,10 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
             if (!load_functions()) return FALSE;
             break;
         case DLL_PROCESS_DETACH:
+            /* Process exit: no census work at all (an unfinished census
+             * simply publishes nothing). */
             if (reserved) break;
+            census_unload();
             if (probe_dir>=0) { close(probe_dir); probe_dir=-1; }
             if (probe_locale) { freelocale(probe_locale); probe_locale=(locale_t)0; }
             if (cuda_handle) dlclose(cuda_handle);
