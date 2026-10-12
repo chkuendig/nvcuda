@@ -20,6 +20,8 @@ typedef struct ZludaCpuTexture {
     unsigned probe_payloads;
     BOOL marker; /* S2 diagnostic: copy-back overwritten with magenta (ZLUDA_D3D11_COPY_MARKER=1) */
     unsigned marker_witness; /* 0 none yet, 1 first copy logged but all zero, 2 non-zero copy characterised */
+    struct ZludaCoverage *cov; /* S3-W diagnostic state, only for the ZLUDA_D3D11_WRITE_COVERAGE size */
+    BOOL probe_active, probe_triple_due; /* last probe record had a non-zero channel; P-triple payload planned for this unmap */
 } ZludaCpuTexture;
 static ZludaCpuTexture *cpu_textures;
 static pthread_mutex_t cpu_textures_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -27,6 +29,7 @@ static pthread_mutex_t cpu_textures_lock = PTHREAD_MUTEX_INITIALIZER;
  * opt-in environment is later changed. Never-enabled mode avoids the lock. */
 static LONG cpu_copy_active;
 #include "d3d11_copy_probe.h"
+#include "d3d11_write_coverage.h"
 
 static int cpu_copy_enabled(void)
 {
@@ -132,6 +135,7 @@ static CUresult cpu_context_check(ZludaCpuTexture *t)
 }
 static void cpu_release(ZludaCpuTexture *t)
 {
+    cov_free(t->cov);
     HeapFree(GetProcessHeap(),0,t->pixels);
     if(t->staging) ID3D11Texture2D_Release(t->staging);
     if(t->texture) ID3D11Texture2D_Release(t->texture);
@@ -149,6 +153,7 @@ static CUresult cpu_register(CUgraphicsResource *out, ID3D11Resource *resource, 
     ZludaCpuTexture *t;
     HRESULT hr;
     BOOL marker=cpu_marker_enabled(); /* read once; logs the opt-in at the first registration */
+    BOOL coverage=cpu_coverage_enabled(); /* likewise */
     if(!out || !resource) return CUDA_ERROR_INVALID_VALUE;
     if(flags) return CUDA_ERROR_NOT_SUPPORTED;
     t=HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,sizeof(*t));
@@ -164,6 +169,7 @@ static CUresult cpu_register(CUgraphicsResource *out, ID3D11Resource *resource, 
     t->width=desc.Width; t->height=desc.Height;
     t->pixels=HeapAlloc(GetProcessHeap(),0,(size_t)t->width*t->height*16);
     if(!t->pixels) { cpu_release(t); return CUDA_ERROR_OUT_OF_MEMORY; }
+    if(coverage && t->width==cov_width && t->height==cov_height && !(t->cov=cov_alloc(t))) { cpu_release(t); return CUDA_ERROR_OUT_OF_MEMORY; }
     result=pcuCtxGetCurrent(&t->cuda_context);
     if(result || !t->cuda_context) { cpu_release(t); return result ? result : CUDA_ERROR_INVALID_CONTEXT; }
     ID3D11Resource_GetDevice(resource,&device);
@@ -205,6 +211,7 @@ static CUresult cpu_register(CUgraphicsResource *out, ID3D11Resource *resource, 
     }
     t->probe_id=++probe_resource_id;
     if(marker) marker_assign(t);
+    if(t->cov) cov_publish(t);
     t->next=cpu_textures; cpu_textures=t;
     InterlockedExchange(&cpu_copy_active,1);
     pthread_mutex_unlock(&cpu_textures_lock);
@@ -227,11 +234,13 @@ static CUresult cpu_transfer(ZludaCpuTexture *t, BOOL to_cuda, CUstream stream, 
     copy.srcMemoryType=to_cuda?1:3; copy.dstMemoryType=to_cuda?3:1;
     if(to_cuda) {
         for(y=0;y<t->height;y++) memcpy((char*)t->pixels+y*copy.WidthInBytes,(char*)mapped.pData+y*mapped.RowPitch,copy.WidthInBytes);
+        if(t->cov) cov_map_fill(t); /* shadow = D3D content; CUDA receives the sentinel */
         copy.srcHost=t->pixels; copy.srcPitch=copy.WidthInBytes; copy.dstArray=t->array;
     }
     else { copy.srcArray=t->array; copy.dstHost=t->pixels; copy.dstPitch=copy.WidthInBytes; }
     result=pcuMemcpy2D_v2(&copy);
     if(!to_cuda) probe_observe(t,stream,ptsz,result,records);
+    if(!result && !to_cuda && t->cov) cov_copy_back(t); /* restore unwritten channels before any marker */
     if(!result && !to_cuda && t->marker) marker_apply(t);
     if(!result && !to_cuda) for(y=0;y<t->height;y++) memcpy((char*)mapped.pData+y*mapped.RowPitch,(char*)t->pixels+y*copy.WidthInBytes,copy.WidthInBytes);
     ID3D11DeviceContext_Unmap(t->context,(ID3D11Resource*)t->staging,0);
@@ -244,6 +253,7 @@ static CUresult cpu_transfer(ZludaCpuTexture *t, BOOL to_cuda, CUstream stream, 
 static int cpu_map(unsigned count, CUgraphicsResource *resources, CUstream stream, BOOL unmap, BOOL ptsz)
 {
     unsigned i,j,found=0;
+    BOOL planned=FALSE;
     CopyProbeRecord *records=NULL;
     CUresult result=CUDA_SUCCESS;
     if(!InterlockedCompareExchange(&cpu_copy_active,0,0) || !resources) return -1;
@@ -260,6 +270,11 @@ static int cpu_map(unsigned count, CUgraphicsResource *resources, CUstream strea
     }
     result=ptsz?pcuStreamSynchronize_ptsz(stream):pcuStreamSynchronize(stream);
     if(result) goto done;
+    if(unmap && probe_payload_mode==1) {
+        /* P-triple: decide payloads for whole covered triples of this batch before any copy-back. */
+        if(count<=PROBE_TRIPLE_BATCH) { for(i=0;i<count;i++) probe_triple_batch[i]=cpu_find(resources[i]); planned=probe_triple_plan(count); }
+        else probe_triple_oversize++;
+    }
     for(i=0;i<count;i++) { result=cpu_transfer(cpu_find(resources[i]),!unmap,stream,ptsz,&records); if(result) goto done; }
     for(i=0;i<count;i++) {
         ZludaCpuTexture *t=cpu_find(resources[i]);
@@ -268,6 +283,7 @@ static int cpu_map(unsigned count, CUgraphicsResource *resources, CUstream strea
     }
     { static unsigned messages; if(messages++<4) FIXME("[ZLUDA] CPU-copy %s OK count=%u\n",unmap?"unmap":"map",count); }
 done:
+    if(planned) probe_triple_settle(count); /* members a failed batch never copied back */
     pthread_mutex_unlock(&cpu_textures_lock);
     probe_flush(records); /* No interop lock held during file output. */
     return result;
@@ -300,6 +316,7 @@ static int cpu_resource(CUgraphicsResource resource, unsigned op, void *out, uns
             if(marker_log_count(count)) FIXME("[ZLUDA] CPU-copy marker-mode unregister count=%d ordinal=%llu %ux%u resource=%p marked=%d\n",
                                               (int)count,t->probe_id,t->width,t->height,t,t->marker);
         }
+        if(t->cov) cov_unpublish(t);
         for(link=&cpu_textures;*link!=t;link=&(*link)->next) {}
         *link=t->next; cpu_release(t); break;
     default: result=CUDA_ERROR_INVALID_VALUE;

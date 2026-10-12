@@ -2,10 +2,11 @@
 import hashlib,json,os,pathlib,struct,subprocess,sys,tempfile
 binary=pathlib.Path(sys.argv[1]).resolve()
 root=pathlib.Path(sys.argv[2]).resolve();root.mkdir(mode=0o700)
-for case in ('disabled','pixels','last-write-failure'):
+for case in ('disabled','pixels','last-write-failure','triple'):
     cap=root/case;cap.mkdir(mode=0o700)
-    env={k:v for k,v in os.environ.items() if k!='ZLUDA_D3D11_COPY_PROBE_DIR'}
+    env={k:v for k,v in os.environ.items() if k not in ('ZLUDA_D3D11_COPY_PROBE_DIR','ZLUDA_D3D11_COPY_PROBE_PAYLOAD')}
     if case!='disabled':env['ZLUDA_D3D11_COPY_PROBE_DIR']=str(cap)
+    if case=='triple':env['ZLUDA_D3D11_COPY_PROBE_PAYLOAD']='triple'
     run=subprocess.run([str(binary),case],env=env,capture_output=True,text=True,timeout=10)
     (root/(case+'.stdout')).write_text(run.stdout);(root/(case+'.stderr')).write_text(run.stderr)
     if run.returncode or 'PASS ' not in run.stdout:raise RuntimeError((case,run.returncode,run.stdout,run.stderr))
@@ -16,6 +17,14 @@ for case in ('disabled','pixels','last-write-failure'):
     if len(summaries)!=1:raise RuntimeError('missing/ambiguous summary')
     summary=json.loads(summaries[0].read_text())
     if not summary['complete']:raise RuntimeError('incomplete summary')
+    if case=='triple':
+        records=[json.loads(p.read_text()) for p in sorted(cap.glob('*-0*.json'))]
+        payloads=[r for r in records if r['payload']]
+        if len(records)!=6 or [r['resource_id'] for r in payloads]!=[3,1,2] or any((cap/r['payload']).stat().st_size!=64 for r in payloads):raise RuntimeError('triple payloads')
+        if (summary['payload_mode'],summary['triple_decisions'],summary['triple_incomplete'],summary['triple_missed'],summary['payloads'])!=('triple',1,2,0,3):raise RuntimeError(('triple summary',summary))
+        if list(cap.glob('*.pending')):raise RuntimeError('unfinished publication')
+        print('PASS',case);continue
+    elif 'payload_mode' in summary:raise RuntimeError('summary schema changed without a payload mode')
     if case=='last-write-failure':
         if summary['captured']!=2 or summary['written']!=1 or summary['io_errors']!=1:raise RuntimeError('final output error lost')
     else:

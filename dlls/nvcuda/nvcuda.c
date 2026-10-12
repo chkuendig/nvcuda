@@ -2381,74 +2381,110 @@ CUresult WINAPI wine_cuMemcpy(CUdeviceptr_v2 dst, CUdeviceptr_v2 src, size_t Byt
 
 CUresult WINAPI wine_cuMemcpy2D(const CUDA_MEMCPY2D *pCopy)
 {
+    CUresult ret;
     TRACE("(%p)\n", pCopy);
-    return pcuMemcpy2D(pCopy);
+    ret = pcuMemcpy2D(pCopy);
+    if (COV_ACTIVE()) cov_copy2d_v1(COV_cuMemcpy2D, pCopy, NULL, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpy2DAsync(const CUDA_MEMCPY2D *pCopy, CUstream hStream)
 {
+    CUresult ret;
     TRACE("(%p, %p)\n", pCopy, hStream);
-    return pcuMemcpy2DAsync(pCopy, hStream);
+    ret = pcuMemcpy2DAsync(pCopy, hStream);
+    if (COV_ACTIVE()) cov_copy2d_v1(COV_cuMemcpy2DAsync, pCopy, hStream, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpy2DAsync_v2(const CUDA_MEMCPY2D *pCopy, CUstream hStream)
 {
+    CUresult ret;
     TRACE("(%p, %p)\n", pCopy, hStream);
-    return pcuMemcpy2DAsync_v2(pCopy, hStream);
+    ret = pcuMemcpy2DAsync_v2(pCopy, hStream);
+    if (COV_ACTIVE()) cov_copy2d(COV_cuMemcpy2DAsync_v2, pCopy, hStream, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpy2DUnaligned(const CUDA_MEMCPY2D *pCopy)
 {
+    CUresult ret;
     TRACE("(%p)\n", pCopy);
-    return pcuMemcpy2DUnaligned(pCopy);
+    ret = pcuMemcpy2DUnaligned(pCopy);
+    if (COV_ACTIVE()) cov_copy2d_v1(COV_cuMemcpy2DUnaligned, pCopy, NULL, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpy2DUnaligned_v2(const CUDA_MEMCPY2D *pCopy)
 {
+    CUresult ret;
     TRACE("(%p)\n", pCopy);
-    return pcuMemcpy2DUnaligned_v2(pCopy);
+    ret = pcuMemcpy2DUnaligned_v2(pCopy);
+    if (COV_ACTIVE()) cov_copy2d(COV_cuMemcpy2DUnaligned_v2, pCopy, NULL, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpy2D_v2(const CUDA_MEMCPY2D *pCopy)
 {
+    CUresult ret;
     TRACE("(%p)\n", pCopy);
-    return pcuMemcpy2D_v2(pCopy);
+    ret = pcuMemcpy2D_v2(pCopy);
+    if (COV_ACTIVE()) cov_copy2d(COV_cuMemcpy2D_v2, pCopy, NULL, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpy3D(const CUDA_MEMCPY3D *pCopy)
 {
+    CUresult ret;
     TRACE("(%p)\n", pCopy);
-    return pcuMemcpy3D(pCopy);
+    ret = pcuMemcpy3D(pCopy);
+    if (COV_ACTIVE()) cov_copy3d_v1(COV_cuMemcpy3D, pCopy, NULL, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpy3DAsync(const CUDA_MEMCPY3D *pCopy, CUstream hStream)
 {
+    CUresult ret;
     TRACE("(%p, %p)\n", pCopy, hStream);
-    return pcuMemcpy3DAsync(pCopy, hStream);
+    ret = pcuMemcpy3DAsync(pCopy, hStream);
+    if (COV_ACTIVE()) cov_copy3d_v1(COV_cuMemcpy3DAsync, pCopy, hStream, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpy3DAsync_v2(const CUDA_MEMCPY3D *pCopy, CUstream hStream)
 {
+    CUresult ret;
     TRACE("(%p, %p)\n", pCopy, hStream);
-    return pcuMemcpy3DAsync_v2(pCopy, hStream);
+    ret = pcuMemcpy3DAsync_v2(pCopy, hStream);
+    if (COV_ACTIVE()) cov_copy3d(COV_cuMemcpy3DAsync_v2, pCopy, hStream, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpy3DPeer(const CUDA_MEMCPY3D_PEER *pCopy)
 {
+    CUresult ret;
     TRACE("(%p)\n", pCopy);
-    return pcuMemcpy3DPeer(pCopy);
+    ret = pcuMemcpy3DPeer(pCopy);
+    if (COV_ACTIVE()) cov_copy3d(COV_cuMemcpy3DPeer, pCopy, NULL, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpy3DPeerAsync(const CUDA_MEMCPY3D_PEER *pCopy, CUstream hStream)
 {
+    CUresult ret;
     TRACE("(%p, %p)\n", pCopy, hStream);
-    return pcuMemcpy3DPeerAsync(pCopy, hStream);
+    ret = pcuMemcpy3DPeerAsync(pCopy, hStream);
+    if (COV_ACTIVE()) cov_copy3d(COV_cuMemcpy3DPeerAsync, pCopy, hStream, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpy3D_v2(const CUDA_MEMCPY3D *pCopy)
 {
+    CUresult ret;
     TRACE("(%p)\n", pCopy);
-    return pcuMemcpy3D_v2(pCopy);
+    ret = pcuMemcpy3D_v2(pCopy);
+    if (COV_ACTIVE()) cov_copy3d(COV_cuMemcpy3D_v2, pCopy, NULL, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpyAsync(CUdeviceptr dst, CUdeviceptr src, size_t ByteCount, CUstream hStream)
@@ -2460,63 +2496,93 @@ CUresult WINAPI wine_cuMemcpyAsync(CUdeviceptr dst, CUdeviceptr src, size_t Byte
 CUresult WINAPI wine_cuMemcpyAtoA(CUarray dstArray, unsigned int dstOffset, CUarray srcArray,
                                   unsigned int srcOffset, unsigned int ByteCount)
 {
+    CUresult ret;
     TRACE("(%p, %u, %p, %u, %u)\n", dstArray, dstOffset, srcArray, srcOffset, ByteCount);
-    return pcuMemcpyAtoA(dstArray, dstOffset, srcArray, srcOffset, ByteCount);
+    ret = pcuMemcpyAtoA(dstArray, dstOffset, srcArray, srcOffset, ByteCount);
+    if (COV_ACTIVE()) cov_linear(COV_cuMemcpyAtoA, 3, dstArray, dstOffset, 3, srcArray, srcOffset, ByteCount, NULL, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpyAtoA_v2(CUarray dstArray, size_t dstOffset, CUarray srcArray,
                                      size_t srcOffset, size_t ByteCount)
 {
+    CUresult ret;
     TRACE("(%p, %zu, %p, %zu, %zu)\n", dstArray, dstOffset, srcArray, srcOffset, ByteCount);
-    return pcuMemcpyAtoA_v2(dstArray, dstOffset, srcArray, srcOffset, ByteCount);
+    ret = pcuMemcpyAtoA_v2(dstArray, dstOffset, srcArray, srcOffset, ByteCount);
+    if (COV_ACTIVE()) cov_linear(COV_cuMemcpyAtoA_v2, 3, dstArray, dstOffset, 3, srcArray, srcOffset, ByteCount, NULL, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpyAtoD(CUdeviceptr_v1 dstDevice, CUarray srcArray, unsigned int srcOffset, unsigned int ByteCount)
 {
+    CUresult ret;
     TRACE("(%u, %p, %u, %u)\n", dstDevice, srcArray, srcOffset, ByteCount);
-    return pcuMemcpyAtoD(dstDevice, srcArray, srcOffset, ByteCount);
+    ret = pcuMemcpyAtoD(dstDevice, srcArray, srcOffset, ByteCount);
+    if (COV_ACTIVE()) cov_linear(COV_cuMemcpyAtoD, 2, NULL, 0, 3, srcArray, srcOffset, ByteCount, NULL, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpyAtoD_v2(CUdeviceptr_v2 dstDevice, CUarray srcArray, size_t srcOffset, size_t ByteCount)
 {
+    CUresult ret;
     TRACE("(" DEV_PTR ", %p, %zu, %zu)\n", dstDevice, srcArray, srcOffset, ByteCount);
-    return pcuMemcpyAtoD_v2(dstDevice, srcArray, srcOffset, ByteCount);
+    ret = pcuMemcpyAtoD_v2(dstDevice, srcArray, srcOffset, ByteCount);
+    if (COV_ACTIVE()) cov_linear(COV_cuMemcpyAtoD_v2, 2, NULL, 0, 3, srcArray, srcOffset, ByteCount, NULL, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpyAtoH(void *dstHost, CUarray srcArray, unsigned int srcOffset, unsigned int ByteCount)
 {
+    CUresult ret;
     TRACE("(%p, %p, %u, %u)\n", dstHost, srcArray, srcOffset, ByteCount);
-    return pcuMemcpyAtoH(dstHost, srcArray, srcOffset, ByteCount);
+    ret = pcuMemcpyAtoH(dstHost, srcArray, srcOffset, ByteCount);
+    if (COV_ACTIVE()) cov_linear(COV_cuMemcpyAtoH, 1, NULL, 0, 3, srcArray, srcOffset, ByteCount, NULL, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpyAtoHAsync(void *dstHost, CUarray srcArray, unsigned int srcOffset, unsigned int ByteCount, CUstream hStream)
 {
+    CUresult ret;
     TRACE("(%p, %p, %u, %u, %p)\n", dstHost, srcArray, srcOffset, ByteCount, hStream);
-    return pcuMemcpyAtoHAsync(dstHost, srcArray, srcOffset, ByteCount, hStream);
+    ret = pcuMemcpyAtoHAsync(dstHost, srcArray, srcOffset, ByteCount, hStream);
+    if (COV_ACTIVE()) cov_linear(COV_cuMemcpyAtoHAsync, 1, NULL, 0, 3, srcArray, srcOffset, ByteCount, hStream, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpyAtoHAsync_v2(void *dstHost, CUarray srcArray, size_t srcOffset, size_t ByteCount, CUstream hStream)
 {
+    CUresult ret;
     TRACE("(%p, %p, %zu, %zu, %p)\n", dstHost, srcArray, srcOffset, ByteCount, hStream);
-    return pcuMemcpyAtoHAsync_v2(dstHost, srcArray, srcOffset, ByteCount, hStream);
+    ret = pcuMemcpyAtoHAsync_v2(dstHost, srcArray, srcOffset, ByteCount, hStream);
+    if (COV_ACTIVE()) cov_linear(COV_cuMemcpyAtoHAsync_v2, 1, NULL, 0, 3, srcArray, srcOffset, ByteCount, hStream, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpyAtoH_v2(void *dstHost, CUarray srcArray, size_t srcOffset, size_t ByteCount)
 {
+    CUresult ret;
     TRACE("(%p, %p, %zu, %zu)\n", dstHost, srcArray, srcOffset, ByteCount);
-    return pcuMemcpyAtoH_v2(dstHost, srcArray, srcOffset, ByteCount);
+    ret = pcuMemcpyAtoH_v2(dstHost, srcArray, srcOffset, ByteCount);
+    if (COV_ACTIVE()) cov_linear(COV_cuMemcpyAtoH_v2, 1, NULL, 0, 3, srcArray, srcOffset, ByteCount, NULL, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpyDtoA(CUarray dstArray, unsigned int dstOffset, CUdeviceptr_v1 srcDevice, unsigned int ByteCount)
 {
+    CUresult ret;
     TRACE("(%p, %u, %u, %u)\n", dstArray, dstOffset, srcDevice, ByteCount);
-    return pcuMemcpyDtoA(dstArray, dstOffset, srcDevice, ByteCount);
+    ret = pcuMemcpyDtoA(dstArray, dstOffset, srcDevice, ByteCount);
+    if (COV_ACTIVE()) cov_linear(COV_cuMemcpyDtoA, 3, dstArray, dstOffset, 2, NULL, 0, ByteCount, NULL, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpyDtoA_v2(CUarray dstArray, size_t dstOffset, CUdeviceptr_v2 srcDevice, size_t ByteCount)
 {
+    CUresult ret;
     TRACE("(%p, %zu, " DEV_PTR ", %zu)\n", dstArray, dstOffset, srcDevice, ByteCount);
-    return pcuMemcpyDtoA_v2(dstArray, dstOffset, srcDevice, ByteCount);
+    ret = pcuMemcpyDtoA_v2(dstArray, dstOffset, srcDevice, ByteCount);
+    if (COV_ACTIVE()) cov_linear(COV_cuMemcpyDtoA_v2, 3, dstArray, dstOffset, 2, NULL, 0, ByteCount, NULL, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpyDtoD(CUdeviceptr_v1 dstDevice, CUdeviceptr_v1 srcDevice, unsigned int ByteCount)
@@ -2571,28 +2637,40 @@ CUresult WINAPI wine_cuMemcpyDtoH_v2(void *dstHost, CUdeviceptr_v2 srcDevice, si
 
 CUresult WINAPI wine_cuMemcpyHtoA(CUarray dstArray, size_t dstOffset, const void *srcHost, size_t ByteCount)
 {
+    CUresult ret;
     TRACE("(%p, %zu, %p, %zu)\n", dstArray, dstOffset, srcHost, ByteCount);
-    return pcuMemcpyHtoA(dstArray, dstOffset, srcHost, ByteCount);
+    ret = pcuMemcpyHtoA(dstArray, dstOffset, srcHost, ByteCount);
+    if (COV_ACTIVE()) cov_linear(COV_cuMemcpyHtoA, 3, dstArray, (unsigned int)dstOffset, 1, NULL, 0, (unsigned int)ByteCount, NULL, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpyHtoAAsync(CUarray dstArray, unsigned int dstOffset, const void *srcHost,
                                        unsigned int ByteCount, CUstream hStream)
 {
+    CUresult ret;
     TRACE("(%p, %u, %p, %u, %p)\n", dstArray, dstOffset, srcHost, ByteCount, hStream);
-    return pcuMemcpyHtoAAsync(dstArray, dstOffset, srcHost, ByteCount, hStream);
+    ret = pcuMemcpyHtoAAsync(dstArray, dstOffset, srcHost, ByteCount, hStream);
+    if (COV_ACTIVE()) cov_linear(COV_cuMemcpyHtoAAsync, 3, dstArray, dstOffset, 1, NULL, 0, ByteCount, hStream, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpyHtoAAsync_v2(CUarray dstArray, size_t dstOffset, const void *srcHost,
                                           size_t ByteCount, CUstream hStream)
 {
+    CUresult ret;
     TRACE("(%p, %zu, %p, %zu, %p)\n", dstArray, dstOffset, srcHost, ByteCount, hStream);
-    return pcuMemcpyHtoAAsync_v2(dstArray, dstOffset, srcHost, ByteCount, hStream);
+    ret = pcuMemcpyHtoAAsync_v2(dstArray, dstOffset, srcHost, ByteCount, hStream);
+    if (COV_ACTIVE()) cov_linear(COV_cuMemcpyHtoAAsync_v2, 3, dstArray, dstOffset, 1, NULL, 0, ByteCount, hStream, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpyHtoA_v2(CUarray dstArray, size_t dstOffset, const void *srcHost, size_t ByteCount)
 {
+    CUresult ret;
     TRACE("(%p, %zu, %p, %zu)\n", dstArray, dstOffset, srcHost, ByteCount);
-    return pcuMemcpyHtoA_v2(dstArray, dstOffset, srcHost, ByteCount);
+    ret = pcuMemcpyHtoA_v2(dstArray, dstOffset, srcHost, ByteCount);
+    if (COV_ACTIVE()) cov_linear(COV_cuMemcpyHtoA_v2, 3, dstArray, dstOffset, 1, NULL, 0, ByteCount, NULL, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpyHtoD(CUdeviceptr_v1 dstDevice, const void *srcHost, unsigned int ByteCount)
@@ -3072,8 +3150,11 @@ CUresult WINAPI wine_cuStreamWaitEvent(CUstream hStream, CUevent hEvent, unsigne
 
 CUresult WINAPI wine_cuSurfObjectCreate(CUsurfObject *pSurfObject, const CUDA_RESOURCE_DESC *pResDesc)
 {
+    CUresult ret;
     TRACE("(%p, %p)\n", pSurfObject, pResDesc);
-    return pcuSurfObjectCreate(pSurfObject, pResDesc);
+    ret = pcuSurfObjectCreate(pSurfObject, pResDesc);
+    if (COV_ACTIVE()) cov_bind_desc(COV_cuSurfObjectCreate, pResDesc, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuSurfObjectDestroy(CUsurfObject surfObject)
@@ -3096,15 +3177,21 @@ CUresult WINAPI wine_cuSurfRefGetArray(CUarray *phArray, CUsurfref hSurfRef)
 
 CUresult WINAPI wine_cuSurfRefSetArray(CUsurfref hSurfRef, CUarray hArray, unsigned int Flags)
 {
+    CUresult ret;
     TRACE("(%p, %p, %u)\n", hSurfRef, hArray, Flags);
-    return pcuSurfRefSetArray(hSurfRef, hArray, Flags);
+    ret = pcuSurfRefSetArray(hSurfRef, hArray, Flags);
+    if (COV_ACTIVE()) cov_bind(COV_cuSurfRefSetArray, hArray, 0, Flags, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuTexObjectCreate(CUtexObject *pTexObject, const CUDA_RESOURCE_DESC *pResDesc,
                                        const CUDA_TEXTURE_DESC *pTexDesc, const CUDA_RESOURCE_VIEW_DESC *pResViewDesc)
 {
+    CUresult ret;
     TRACE("(%p, %p, %p, %p)\n", pTexObject, pResDesc, pTexDesc, pResViewDesc);
-    return pcuTexObjectCreate(pTexObject, pResDesc, pTexDesc, pResViewDesc);
+    ret = pcuTexObjectCreate(pTexObject, pResDesc, pTexDesc, pResViewDesc);
+    if (COV_ACTIVE()) cov_bind_desc(COV_cuTexObjectCreate, pResDesc, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuTexObjectDestroy(CUtexObject texObject)
@@ -3256,8 +3343,11 @@ CUresult WINAPI wine_cuTexRefSetAddress_v2(size_t *ByteOffset, CUtexref hTexRef,
 
 CUresult WINAPI wine_cuTexRefSetArray(CUtexref hTexRef, CUarray hArray, unsigned int Flags)
 {
+    CUresult ret;
     TRACE("(%p, %p, %u)\n", hTexRef, hArray, Flags);
-    return pcuTexRefSetArray(hTexRef, hArray, Flags);
+    ret = pcuTexRefSetArray(hTexRef, hArray, Flags);
+    if (COV_ACTIVE()) cov_bind(COV_cuTexRefSetArray, hArray, 0, Flags, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuTexRefSetFilterMode(CUtexref hTexRef, CUfilter_mode fm)
@@ -3478,44 +3568,65 @@ CUresult WINAPI wine_cuLaunchKernel_ptsz(CUfunction f, unsigned int gridDimX, un
 
 CUresult WINAPI wine_cuMemcpy2DAsync_v2_ptsz(const CUDA_MEMCPY2D *pCopy, CUstream hStream)
 {
+    CUresult ret;
     TRACE("(%p, %p)\n", pCopy, hStream);
-    return pcuMemcpy2DAsync_v2_ptsz(pCopy, hStream);
+    ret = pcuMemcpy2DAsync_v2_ptsz(pCopy, hStream);
+    if (COV_ACTIVE()) cov_copy2d(COV_cuMemcpy2DAsync_v2_ptsz, pCopy, hStream, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpy2DUnaligned_v2_ptds(const CUDA_MEMCPY2D *pCopy)
 {
+    CUresult ret;
     TRACE("(%p)\n", pCopy);
-    return pcuMemcpy2DUnaligned_v2_ptds(pCopy);
+    ret = pcuMemcpy2DUnaligned_v2_ptds(pCopy);
+    if (COV_ACTIVE()) cov_copy2d(COV_cuMemcpy2DUnaligned_v2_ptds, pCopy, NULL, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpy2D_v2_ptds(const CUDA_MEMCPY2D *pCopy)
 {
+    CUresult ret;
     TRACE("(%p)\n", pCopy);
-    return pcuMemcpy2D_v2_ptds(pCopy);
+    ret = pcuMemcpy2D_v2_ptds(pCopy);
+    if (COV_ACTIVE()) cov_copy2d(COV_cuMemcpy2D_v2_ptds, pCopy, NULL, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpy3DAsync_v2_ptsz(const CUDA_MEMCPY3D *pCopy, CUstream hStream)
 {
+    CUresult ret;
     TRACE("(%p, %p)\n", pCopy, hStream);
-    return pcuMemcpy3DAsync_v2_ptsz(pCopy, hStream);
+    ret = pcuMemcpy3DAsync_v2_ptsz(pCopy, hStream);
+    if (COV_ACTIVE()) cov_copy3d(COV_cuMemcpy3DAsync_v2_ptsz, pCopy, hStream, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpy3DPeerAsync_ptsz(const CUDA_MEMCPY3D_PEER *pCopy, CUstream hStream)
 {
+    CUresult ret;
     TRACE("(%p, %p)\n", pCopy, hStream);
-    return pcuMemcpy3DPeerAsync_ptsz(pCopy, hStream);
+    ret = pcuMemcpy3DPeerAsync_ptsz(pCopy, hStream);
+    if (COV_ACTIVE()) cov_copy3d(COV_cuMemcpy3DPeerAsync_ptsz, pCopy, hStream, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpy3DPeer_ptds(const CUDA_MEMCPY3D_PEER *pCopy)
 {
+    CUresult ret;
     TRACE("(%p)\n", pCopy);
-    return pcuMemcpy3DPeer_ptds(pCopy);
+    ret = pcuMemcpy3DPeer_ptds(pCopy);
+    if (COV_ACTIVE()) cov_copy3d(COV_cuMemcpy3DPeer_ptds, pCopy, NULL, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpy3D_v2_ptds(const CUDA_MEMCPY3D *pCopy)
 {
+    CUresult ret;
     TRACE("(%p)\n", pCopy);
-    return pcuMemcpy3D_v2_ptds(pCopy);
+    ret = pcuMemcpy3D_v2_ptds(pCopy);
+    if (COV_ACTIVE()) cov_copy3d(COV_cuMemcpy3D_v2_ptds, pCopy, NULL, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpyAsync_ptsz(CUdeviceptr dst, CUdeviceptr src, size_t ByteCount, CUstream hStream)
@@ -3527,32 +3638,47 @@ CUresult WINAPI wine_cuMemcpyAsync_ptsz(CUdeviceptr dst, CUdeviceptr src, size_t
 CUresult WINAPI wine_cuMemcpyAtoA_v2_ptds(CUarray dstArray, size_t dstOffset, CUarray srcArray,
                                           size_t srcOffset, size_t ByteCount)
 {
+    CUresult ret;
     TRACE("(%p, %zu, %p, %zu, %zu)\n", dstArray, dstOffset, srcArray, srcOffset, ByteCount);
-    return pcuMemcpyAtoA_v2_ptds(dstArray, dstOffset, srcArray, srcOffset, ByteCount);
+    ret = pcuMemcpyAtoA_v2_ptds(dstArray, dstOffset, srcArray, srcOffset, ByteCount);
+    if (COV_ACTIVE()) cov_linear(COV_cuMemcpyAtoA_v2_ptds, 3, dstArray, dstOffset, 3, srcArray, srcOffset, ByteCount, NULL, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpyAtoD_v2_ptds(CUdeviceptr dstDevice, CUarray srcArray, size_t srcOffset, size_t ByteCount)
 {
+    CUresult ret;
     TRACE("(" DEV_PTR ", %p, %zu, %zu)\n", dstDevice, srcArray, srcOffset, ByteCount);
-    return pcuMemcpyAtoD_v2_ptds(dstDevice, srcArray, srcOffset, ByteCount);
+    ret = pcuMemcpyAtoD_v2_ptds(dstDevice, srcArray, srcOffset, ByteCount);
+    if (COV_ACTIVE()) cov_linear(COV_cuMemcpyAtoD_v2_ptds, 2, NULL, 0, 3, srcArray, srcOffset, ByteCount, NULL, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpyAtoHAsync_v2_ptsz(void *dstHost, CUarray srcArray, size_t srcOffset, size_t ByteCount, CUstream hStream)
 {
+    CUresult ret;
     TRACE("(%p, %p, %zu, %zu, %p)\n", dstHost, srcArray, srcOffset, ByteCount, hStream);
-    return pcuMemcpyAtoHAsync_v2_ptsz(dstHost, srcArray, srcOffset, ByteCount, hStream);
+    ret = pcuMemcpyAtoHAsync_v2_ptsz(dstHost, srcArray, srcOffset, ByteCount, hStream);
+    if (COV_ACTIVE()) cov_linear(COV_cuMemcpyAtoHAsync_v2_ptsz, 1, NULL, 0, 3, srcArray, srcOffset, ByteCount, hStream, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpyAtoH_v2_ptds(void *dstHost, CUarray srcArray, size_t srcOffset, size_t ByteCount)
 {
+    CUresult ret;
     TRACE("(%p, %p, %zu, %zu)\n", dstHost, srcArray, srcOffset, ByteCount);
-    return pcuMemcpyAtoH_v2_ptds(dstHost, srcArray, srcOffset, ByteCount);
+    ret = pcuMemcpyAtoH_v2_ptds(dstHost, srcArray, srcOffset, ByteCount);
+    if (COV_ACTIVE()) cov_linear(COV_cuMemcpyAtoH_v2_ptds, 1, NULL, 0, 3, srcArray, srcOffset, ByteCount, NULL, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpyDtoA_v2_ptds(CUarray dstArray, size_t dstOffset, CUdeviceptr_v2 srcDevice, size_t ByteCount)
 {
+    CUresult ret;
     TRACE("(%p, %zu, " DEV_PTR ", %zu)\n", dstArray, dstOffset, srcDevice, ByteCount);
-    return pcuMemcpyDtoA_v2_ptds(dstArray, dstOffset, srcDevice, ByteCount);
+    ret = pcuMemcpyDtoA_v2_ptds(dstArray, dstOffset, srcDevice, ByteCount);
+    if (COV_ACTIVE()) cov_linear(COV_cuMemcpyDtoA_v2_ptds, 3, dstArray, dstOffset, 2, NULL, 0, ByteCount, NULL, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpyDtoDAsync_v2_ptsz(CUdeviceptr_v2 dstDevice, CUdeviceptr_v2 srcDevice,
@@ -3583,14 +3709,20 @@ CUresult WINAPI wine_cuMemcpyDtoH_v2_ptds(void *dstHost, CUdeviceptr_v2 srcDevic
 CUresult WINAPI wine_cuMemcpyHtoAAsync_v2_ptsz(CUarray dstArray, size_t dstOffset, const void *srcHost,
                                                size_t ByteCount, CUstream hStream)
 {
+    CUresult ret;
     TRACE("(%p, %zu, %p, %zu, %p)\n", dstArray, dstOffset, srcHost, ByteCount, hStream);
-    return pcuMemcpyHtoAAsync_v2_ptsz(dstArray, dstOffset, srcHost, ByteCount, hStream);
+    ret = pcuMemcpyHtoAAsync_v2_ptsz(dstArray, dstOffset, srcHost, ByteCount, hStream);
+    if (COV_ACTIVE()) cov_linear(COV_cuMemcpyHtoAAsync_v2_ptsz, 3, dstArray, dstOffset, 1, NULL, 0, ByteCount, hStream, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpyHtoA_v2_ptds(CUarray dstArray, size_t dstOffset, const void *srcHost, size_t ByteCount)
 {
+    CUresult ret;
     TRACE("(%p, %zu, %p, %zu)\n", dstArray, dstOffset, srcHost, ByteCount);
-    return pcuMemcpyHtoA_v2_ptds(dstArray, dstOffset, srcHost, ByteCount);
+    ret = pcuMemcpyHtoA_v2_ptds(dstArray, dstOffset, srcHost, ByteCount);
+    if (COV_ACTIVE()) cov_linear(COV_cuMemcpyHtoA_v2_ptds, 3, dstArray, dstOffset, 1, NULL, 0, ByteCount, NULL, ret);
+    return ret;
 }
 
 CUresult WINAPI wine_cuMemcpyHtoDAsync_v2_ptsz(CUdeviceptr dstDevice, const void *srcHost, size_t ByteCount, CUstream hStream)

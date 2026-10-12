@@ -17,6 +17,14 @@
 #define PROBE_PAYLOAD_BYTES (4u*1024u*1024u)
 #define PROBE_WINDOW_NS UINT64_C(30000000000)
 #define PROBE_INTERVAL_NS UINT64_C(2000000000)
+/* P-triple (ZLUDA_D3D11_COPY_PROBE_PAYLOAD=triple): payloads of all three
+ * members of a covered triple from the same unmap batch, keyed on the first
+ * member (ordinal k%3==1). Replaces the default k%6==1 rule. */
+#define PROBE_TRIPLE_TABLE 64
+#define PROBE_TRIPLE_BATCH 64
+#define PROBE_TRIPLE_PER_RESOURCE 4
+#define PROBE_TRIPLE_PAYLOAD_LIMIT 64
+#define PROBE_TRIPLE_INTERVAL_NS UINT64_C(4000000000)
 
 typedef struct {
     unsigned finite, nonzero, nan_count, inf_count;
@@ -43,6 +51,10 @@ static unsigned probe_written, probe_terminal;
 static locale_t probe_locale;
 static unsigned probe_dropped, probe_io_errors;
 static unsigned long long probe_next_poll_ns;
+static int probe_payload_mode; /* 0 default k%6==1, 1 triple, -1 rejected value: no payloads */
+static unsigned long long probe_triple_ns[PROBE_TRIPLE_TABLE];
+static ZludaCpuTexture *probe_triple_batch[PROBE_TRIPLE_BATCH]; /* registry lock */
+static unsigned probe_triple_decisions, probe_triple_incomplete, probe_triple_missed, probe_triple_oversize;
 
 static unsigned long long probe_now(void)
 {
@@ -63,6 +75,12 @@ static void probe_setup(void)
     if(!probe_locale) { close(fd); return; }
     probe_owner=getpid();
     probe_dir=fd;
+    path=getenv("ZLUDA_D3D11_COPY_PROBE_PAYLOAD");
+    if(path) {
+        probe_payload_mode=strcmp(path,"triple")?-1:1;
+        if(probe_payload_mode>0) FIXME("[ZLUDA] copy probe explicit opt-in payload mode triple (covered triples, %d per resource, %d total)\n",PROBE_TRIPLE_PER_RESOURCE,PROBE_TRIPLE_PAYLOAD_LIMIT);
+        else FIXME("[ZLUDA] copy probe payload mode value rejected (expected triple); no payloads\n");
+    }
 }
 static void probe_poll(void)
 {
@@ -85,13 +103,15 @@ static void probe_observe(ZludaCpuTexture *t, CUstream stream, BOOL ptsz, CUresu
     CopyProbeRecord *r;
     const unsigned char *raw=t->pixels;
     size_t i, bytes=(size_t)t->width*t->height*16;
-    if(!start || probe_owner!=getpid()) return;
+    BOOL due=t->probe_triple_due; /* planned members bypass the per-resource interval */
+    t->probe_triple_due=0;
+    if(!start || probe_owner!=getpid()) { probe_triple_missed+=due; return; }
     now=probe_now();
-    if(now<start || now-start>PROBE_WINDOW_NS || (t->probe_last_ns && now-t->probe_last_ns<PROBE_INTERVAL_NS)) return;
+    if(now<start || now-start>PROBE_WINDOW_NS || (!due && t->probe_last_ns && now-t->probe_last_ns<PROBE_INTERVAL_NS)) { probe_triple_missed+=due; return; }
     t->probe_last_ns=now;
-    if(__atomic_load_n(&probe_records,__ATOMIC_RELAXED)>=PROBE_RECORD_LIMIT) { __atomic_fetch_add(&probe_dropped,1,__ATOMIC_RELAXED); return; }
+    if(__atomic_load_n(&probe_records,__ATOMIC_RELAXED)>=PROBE_RECORD_LIMIT) { __atomic_fetch_add(&probe_dropped,1,__ATOMIC_RELAXED); probe_triple_missed+=due; return; }
     r=calloc(1,sizeof(*r));
-    if(!r) { __atomic_fetch_add(&probe_dropped,1,__ATOMIC_RELAXED); return; }
+    if(!r) { __atomic_fetch_add(&probe_dropped,1,__ATOMIC_RELAXED); probe_triple_missed+=due; return; }
     r->sequence=__atomic_add_fetch(&probe_records,1,__ATOMIC_RELAXED); r->resource_id=t->probe_id; r->epoch=t->map_epoch; r->ns=now;
     r->width=t->width; r->height=t->height; r->ptsz=ptsz; r->result=result; r->bytes=bytes;
     r->resource=(uintptr_t)t; r->texture=(uintptr_t)t->texture; r->array=(uintptr_t)t->array;
@@ -106,16 +126,59 @@ static void probe_observe(ZludaCpuTexture *t, CUstream stream, BOOL ptsz, CUresu
             else if(!isfinite(f)) c->inf_count++;
             else { if(!c->finite || f<c->minimum)c->minimum=f; if(!c->finite || f>c->maximum)c->maximum=f; c->finite++; c->nonzero+=(f!=0); }
         }
+        t->probe_active=0;
+        for(i=0;i<4;i++) if(r->channels[i].nonzero) t->probe_active=1;
+        if(due) {
+            if(!result && t->probe_payloads<PROBE_TRIPLE_PER_RESOURCE && probe_payloads<PROBE_TRIPLE_PAYLOAD_LIMIT && bytes<=PROBE_PAYLOAD_BYTES && (r->payload=malloc(bytes))) {
+                memcpy(r->payload,t->pixels,bytes); t->probe_payloads++; t->probe_payload_ns=now; probe_payloads++;
+            }
+            else probe_triple_missed++;
+            due=0;
+        }
         /* Eight stable resource slots, up to two payloads each, separated by
          * ten seconds. Exact float4 bytes; no row padding in this host buffer. */
-        if(t->probe_id%6==1 && t->probe_payloads<2 && (t->probe_payloads==0 || now-t->probe_payload_ns>=UINT64_C(10000000000)) && probe_payloads<PROBE_PAYLOAD_LIMIT && bytes<=PROBE_PAYLOAD_BYTES) {
+        else if(!probe_payload_mode && t->probe_id%6==1 && t->probe_payloads<2 && (t->probe_payloads==0 || now-t->probe_payload_ns>=UINT64_C(10000000000)) && probe_payloads<PROBE_PAYLOAD_LIMIT && bytes<=PROBE_PAYLOAD_BYTES) {
             r->payload=malloc(bytes);
             if(r->payload) { memcpy(r->payload,t->pixels,bytes); t->probe_payloads++; t->probe_payload_ns=now; probe_payloads++; }
             else __atomic_fetch_add(&probe_dropped,1,__ATOMIC_RELAXED);
         }
     }
+    probe_triple_missed+=due; /* planned member whose copy failed */
     __atomic_add_fetch(&probe_inflight,1,__ATOMIC_RELEASE);
     r->next=*records; *records=r;
+}
+/* Registry lock held; unmap batch, before any copy-back. A covered first member
+ * (k%3==1) whose last probe record was non-zero decides for its triple: all
+ * three members must be in this batch with the same map epoch, otherwise the
+ * decision counts as incomplete. Returns whether any member was planned. */
+static BOOL probe_triple_plan(unsigned count)
+{
+    ZludaCpuTexture *const *batch=probe_triple_batch;
+    unsigned long long start=__atomic_load_n(&probe_start_ns,__ATOMIC_ACQUIRE), now;
+    unsigned i, j, k, planned=0;
+    if(!start || probe_owner!=getpid()) return 0;
+    now=probe_now();
+    if(now<start || now-start>PROBE_WINDOW_NS) return 0;
+    for(i=0;i<count;i++) {
+        ZludaCpuTexture *member[3]={batch[i],NULL,NULL};
+        unsigned long long id=batch[i]->probe_id;
+        unsigned idx=(unsigned)((id-1)/3);
+        if(!batch[i]->cov || id%3!=1 || !batch[i]->probe_active || idx>=PROBE_TRIPLE_TABLE) continue;
+        if(batch[i]->probe_payloads>=PROBE_TRIPLE_PER_RESOURCE || probe_payloads+planned+3>PROBE_TRIPLE_PAYLOAD_LIMIT) continue;
+        if(probe_triple_ns[idx] && now-probe_triple_ns[idx]<PROBE_TRIPLE_INTERVAL_NS) continue;
+        probe_triple_ns[idx]=now;
+        for(k=1;k<3;k++) for(j=0;j<count;j++)
+            if(batch[j]->probe_id==id+k && batch[j]->cov && batch[j]->map_epoch==batch[i]->map_epoch) member[k]=batch[j];
+        if(!member[1] || !member[2]) { probe_triple_incomplete++; continue; }
+        for(k=0;k<3;k++) member[k]->probe_triple_due=1;
+        probe_triple_decisions++; planned+=3;
+    }
+    return planned!=0;
+}
+static void probe_triple_settle(unsigned count)
+{
+    unsigned i;
+    for(i=0;i<count;i++) if(probe_triple_batch[i]->probe_triple_due) { probe_triple_batch[i]->probe_triple_due=0; probe_triple_missed++; }
 }
 static int probe_write_all(int fd,const void *data,size_t size)
 {
@@ -141,7 +204,7 @@ static int probe_publish(const char *name,const void *data,size_t size)
 static void probe_finish(void)
 {
     unsigned long long start=__atomic_load_n(&probe_start_ns,__ATOMIC_ACQUIRE), now=probe_now();
-    char name[96],json[512];int n;
+    char name[96],json[768];int n;
     unsigned captured,payloads,dropped;
     if(!start || now<start || now-start<=PROBE_WINDOW_NS || probe_terminal)return;
     /* A capture can still be scanning under the registry lock. Wait for it
@@ -152,6 +215,9 @@ static void probe_finish(void)
     probe_terminal=1;
     pthread_mutex_unlock(&cpu_textures_lock);
     n=snprintf(json,sizeof(json),"{\"schema\":1,\"pid\":%u,\"complete\":true,\"window_start_ns\":%llu,\"window_end_ns\":%llu,\"summary_ns\":%llu,\"captured\":%u,\"written\":%u,\"payloads\":%u,\"dropped\":%u,\"io_errors\":%u}\n",(unsigned)getpid(),start,start+PROBE_WINDOW_NS,now,captured,probe_written,payloads,dropped,probe_io_errors);
+    if(probe_payload_mode) /* Same object, extended only when a payload mode was set. */
+        n=snprintf(json+n-2,sizeof(json)-n+2,",\"payload_mode\":\"%s\",\"triple_decisions\":%u,\"triple_incomplete\":%u,\"triple_missed\":%u,\"triple_oversize\":%u}\n",
+                   probe_payload_mode>0?"triple":"rejected",probe_triple_decisions,probe_triple_incomplete,probe_triple_missed,probe_triple_oversize)+n-2;
     snprintf(name,sizeof(name),"%u-summary.json",(unsigned)getpid());
     if(probe_publish(name,json,n)) ERR("[ZLUDA] copy probe terminal summary failed; evidence incomplete\n");
 }
