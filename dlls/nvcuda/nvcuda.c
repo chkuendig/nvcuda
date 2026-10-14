@@ -883,7 +883,9 @@ static BOOL load_functions(void)
 {
     if (!(cuda_handle = dlopen("libcuda.so.1", RTLD_NOW)))
     {
-        FIXME("Wine cannot find the cuda library, CUDA support is disabled.\n");
+        const char *err = dlerror();
+        FIXME("Wine cannot find the cuda library, CUDA support is disabled. dlerror=%s\n",
+              err ? err : "(null)");
         return FALSE;
     }
 
