@@ -879,6 +879,8 @@ static CUresult (*pzluda_d3d11_register_imported)(CUgraphicsResource *pCudaResou
 
 static void *cuda_handle = NULL;
 
+#include "d3d11_cpu_copy.h"
+
 static BOOL load_functions(void)
 {
     if (!(cuda_handle = dlopen("libcuda.so.1", RTLD_NOW)))
@@ -888,6 +890,7 @@ static BOOL load_functions(void)
               err ? err : "(null)");
         return FALSE;
     }
+    fprintf(stderr, "nvcuda: loaded libcuda.so.1\n");
 
     #define LOAD_FUNCPTR(f) if((*(void **)(&p##f) = dlsym(cuda_handle, #f)) == NULL){ERR("Can't find symbol %s\n", #f); return FALSE;}
     #define TRY_LOAD_FUNCPTR(f) *(void **)(&p##f) = dlsym(cuda_handle, #f)
@@ -2086,6 +2089,7 @@ CUresult WINAPI wine_cuGraphicsGLRegisterImage(CUgraphicsResource *pCudaResource
 
 CUresult WINAPI wine_cuGraphicsMapResources(unsigned int count, CUgraphicsResource *resources, CUstream hStream)
 {
+    int copy_result=cpu_map(count,resources,hStream,FALSE,FALSE); if(copy_result>=0) return copy_result;
     TRACE("(%u, %p, %p)\n", count, resources, hStream);
     /* Refresh imported memory with current D3D11 image contents BEFORE
      * libcuda.so/HIP starts reading. Resources not in our table (eg GL,
@@ -2096,24 +2100,28 @@ CUresult WINAPI wine_cuGraphicsMapResources(unsigned int count, CUgraphicsResour
 
 CUresult WINAPI wine_cuGraphicsResourceGetMappedMipmappedArray(CUmipmappedArray *pMipmappedArray, CUgraphicsResource resource)
 {
+    int copy_result=cpu_resource(resource,3,NULL,0,0); if(copy_result>=0) return copy_result;
     TRACE("(%p, %p)\n", pMipmappedArray, resource);
     return pcuGraphicsResourceGetMappedMipmappedArray(pMipmappedArray, resource);
 }
 
 CUresult WINAPI wine_cuGraphicsResourceGetMappedPointer(CUdeviceptr_v1 *pDevPtr, unsigned int *pSize, CUgraphicsResource resource)
 {
+    int copy_result=cpu_resource(resource,1,NULL,0,0); if(copy_result>=0) return copy_result;
     TRACE("(%p, %p, %p)\n", pDevPtr, pSize, resource);
     return pcuGraphicsResourceGetMappedPointer(pDevPtr, pSize, resource);
 }
 
 CUresult WINAPI wine_cuGraphicsResourceGetMappedPointer_v2(CUdeviceptr *pDevPtr, size_t *pSize, CUgraphicsResource resource)
 {
+    int copy_result=cpu_resource(resource,1,NULL,0,0); if(copy_result>=0) return copy_result;
     TRACE("(%p, %p, %p)\n", pDevPtr, pSize, resource);
     return pcuGraphicsResourceGetMappedPointer_v2(pDevPtr, pSize, resource);
 }
 
 CUresult WINAPI wine_cuGraphicsResourceSetMapFlags(CUgraphicsResource resource, unsigned int flags)
 {
+    int copy_result=cpu_resource(resource,2,NULL,flags,0); if(copy_result>=0) return copy_result;
     TRACE("(%p, %u)\n", resource, flags);
     return pcuGraphicsResourceSetMapFlags(resource, flags);
 }
@@ -2121,12 +2129,14 @@ CUresult WINAPI wine_cuGraphicsResourceSetMapFlags(CUgraphicsResource resource, 
 CUresult WINAPI wine_cuGraphicsSubResourceGetMappedArray(CUarray *pArray, CUgraphicsResource resource,
                                                          unsigned int arrayIndex, unsigned int mipLevel)
 {
+    int copy_result=cpu_resource(resource,0,pArray,arrayIndex,mipLevel); if(copy_result>=0) return copy_result;
     TRACE("(%p, %p, %u, %u)\n", pArray, resource, arrayIndex, mipLevel);
     return pcuGraphicsSubResourceGetMappedArray(pArray, resource, arrayIndex, mipLevel);
 }
 
 CUresult WINAPI wine_cuGraphicsUnmapResources(unsigned int count, CUgraphicsResource *resources, CUstream hStream)
 {
+    int copy_result=cpu_map(count,resources,hStream,TRUE,FALSE); if(copy_result>=0) return copy_result;
     TRACE("(%u, %p, %p)\n", count, resources, hStream);
     /* Propagate CUDA-written buffer contents back into DXVK's image BEFORE
      * libcuda.so finalises the unmap, so the next D3D11 sample sees the
@@ -2137,6 +2147,7 @@ CUresult WINAPI wine_cuGraphicsUnmapResources(unsigned int count, CUgraphicsReso
 
 CUresult WINAPI wine_cuGraphicsUnregisterResource(CUgraphicsResource resource)
 {
+    int copy_result=cpu_resource(resource,4,NULL,0,0); if(copy_result>=0) return copy_result;
     TRACE("(%p)\n", resource);
     CUresult cu = pcuGraphicsUnregisterResource(resource);
     /* Tear down our PE-side table entry AFTER libcuda.so has had a chance
@@ -3335,6 +3346,7 @@ CUresult WINAPI wine_cuGLGetDevices_v2(unsigned int *pCudaDeviceCount, CUdevice 
 
 CUresult WINAPI wine_cuGraphicsResourceSetMapFlags_v2(CUgraphicsResource resource, unsigned int flags)
 {
+    int copy_result=cpu_resource(resource,2,NULL,flags,0); if(copy_result>=0) return copy_result;
     TRACE("(%p, %u)\n", resource, flags);
     return pcuGraphicsResourceSetMapFlags_v2(resource, flags);
 }
@@ -3438,6 +3450,7 @@ CUresult WINAPI wine_cuGLMapBufferObject_v2_ptds(CUdeviceptr *dptr, size_t *size
 
 CUresult WINAPI wine_cuGraphicsMapResources_ptsz(unsigned int count, CUgraphicsResource *resources, CUstream hStream)
 {
+    int copy_result=cpu_map(count,resources,hStream,FALSE,TRUE); if(copy_result>=0) return copy_result;
     TRACE("(%u, %p, %p)\n", count, resources, hStream);
     zluda_d3d11_blit_on_map(count, (void**)resources);
     return pcuGraphicsMapResources_ptsz(count, resources, hStream);
@@ -3445,6 +3458,7 @@ CUresult WINAPI wine_cuGraphicsMapResources_ptsz(unsigned int count, CUgraphicsR
 
 CUresult WINAPI wine_cuGraphicsUnmapResources_ptsz(unsigned int count, CUgraphicsResource *resources, CUstream hStream)
 {
+    int copy_result=cpu_map(count,resources,hStream,TRUE,TRUE); if(copy_result>=0) return copy_result;
     TRACE("(%u, %p, %p)\n", count, resources, hStream);
     zluda_d3d11_blit_on_unmap(count, (void**)resources);
     return pcuGraphicsUnmapResources_ptsz(count, resources, hStream);
@@ -6391,6 +6405,7 @@ CUresult WINAPI wine_cuD3D11GetDevice(CUdevice *pCudaDevice, IDXGIAdapter *pAdap
 
 CUresult WINAPI wine_cuGraphicsD3D11RegisterResource(CUgraphicsResource *pCudaResource, ID3D11Resource *pD3DResource, unsigned int Flags)
 {
+    if(cpu_copy_enabled()) return cpu_register(pCudaResource,pD3DResource,Flags);
     /* P0 probe (ZLUDA D3D11 interop investigation) — identify what the app is
      * actually trying to register (buffer? texture? mip count?) before forwarding
      * to libcuda.so. COM introspection happens HERE on the PE side because the
