@@ -1822,8 +1822,27 @@ CUresult WINAPI wine_cuDeviceGet(CUdevice *device, int ordinal)
 CUresult WINAPI wine_cuDeviceGetAttribute(int *pi, CUdevice_attribute attrib, CUdevice dev)
 {
     CUresult ret = pcuDeviceGetAttribute(pi, attrib, dev);
-    if(ret != CUDA_SUCCESS) TRACE("Attribute: %d, Returned error: %d\n", attrib, ret);
-    else TRACE("(Device: %d, Attribute: %d) Value: (%d)\n", dev, attrib, *pi);
+    if(ret != CUDA_SUCCESS) {
+        /* PhysXDevice64.dll's physxDevGetCudaOrdinal queries the undocumented
+         * NVIDIA-private attribute 0x20080402 (decimal 537396226). Closed-source
+         * call-site disassembly and observed behavior suggest an adapter
+         * identity/handle query used to correlate CUDA ordinals with the GPU
+         * selected in NVIDIA Control Panel's PhysX Configuration. The
+         * 0x20000000 namespace interpretation is also reverse-engineered;
+         * neither interpretation is NVIDIA-confirmed or publicly documented.
+         * The ID is absent from the public cuda.h device-attribute enum.
+         *
+         * HIP has no equivalent and returns INVALID_VALUE. In the observed
+         * single-device ZLUDA setup, zero/SUCCESS lets PhysX's failed AMD
+         * target path match ordinal 0. Retain the existing broad error fallback
+         * here; this is not evidence that NVIDIA drivers accept unknown IDs
+         * or that zero is a general adapter identity for multiple devices. */
+        FIXME("Attribute: %d (0x%x), libcuda returned error: %d -- substituting *pi=0 SUCCESS\n",
+              attrib, attrib, ret);
+        if (pi) *pi = 0;
+        return CUDA_SUCCESS;
+    }
+    TRACE("(Device: %d, Attribute: %d) Value: (%d)\n", dev, attrib, *pi);
     return ret;
 }
 
