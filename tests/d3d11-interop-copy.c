@@ -158,6 +158,25 @@ static int relay_cases(RelayApi *a, ID3D11Device *dev, ID3D11DeviceContext *dc,
         }
         puts("PASS flag contract: discard publishes exact overwrite, read-only never publishes, mixed batch input exact");
     }
+    /* Write-discard from the first map after registration with no CUDA writes:
+     * the relay must keep the D3D image (titles rely on persistence). */
+    {
+        ID3D11Texture2D *fresh; CUgraphicsResource res;
+        for(unsigned i=0;i<W*H*4;i++) input[i]=(float)(i%97)+0.25f;
+        HR(ID3D11Device_CreateTexture2D(dev,&td,NULL,&fresh));
+        ID3D11DeviceContext_UpdateSubresource(dc,(ID3D11Resource*)fresh,0,NULL,input,W*16,0);
+        CU(a->reg(&res,(ID3D11Resource*)fresh,0)); CU(a->flags(res,2));
+        for(unsigned round=0;round<2;round++) {
+            D3D11_MAPPED_SUBRESOURCE mapped;
+            CU(a->map(1,&res,stream)); CU(a->unmap(1,&res,stream));
+            ID3D11DeviceContext_CopyResource(dc,(ID3D11Resource*)staging,(ID3D11Resource*)fresh);
+            HR(ID3D11DeviceContext_Map(dc,(ID3D11Resource*)staging,0,D3D11_MAP_READ,0,&mapped));
+            for(unsigned y=0;y<H;y++) if(memcmp(input+y*W*4,(char*)mapped.pData+y*mapped.RowPitch,W*16)) return 16;
+            ID3D11DeviceContext_Unmap(dc,(ID3D11Resource*)staging,0);
+        }
+        CU(a->flags(res,0)); CU(a->unreg(res)); ID3D11Texture2D_Release(fresh);
+        puts("PASS first write-discard map after registration keeps the D3D image; later maps persist");
+    }
     InterlockedExchange(&worker.stop,1);
     if(WaitForSingleObject(thread,5000)!=WAIT_OBJECT_0 || !worker.progress) return 12;
     printf("PASS concurrent D3D lock progress=%ld (forced polling checked by relay-contract)\n",worker.progress);

@@ -18,6 +18,7 @@ typedef struct ZludaCpuTexture {
     UINT width, height;
     CUevent upload_done;
     BOOL mapped, pending, poisoned;
+    BOOL primed; /* array has received D3D content since registration */
     unsigned map_flags; /* CUDA NONE=0, READ_ONLY=1, WRITE_DISCARD=2. */
 } ZludaCpuTexture;
 static ZludaCpuTexture *cpu_textures;
@@ -168,12 +169,14 @@ static void cpu_poll_backoff(unsigned attempt)
 {
     Sleep(attempt<4?0:1);
 }
-/* WRITE_DISCARD leaves the mapped contents undefined, so such a map needs
- * neither the D3D snapshot nor any wait for earlier D3D or CUDA work: CUDA
- * writes only the private array, and unmap publishes in D3D context order. */
+/* WRITE_DISCARD is treated as "contents may be stale", not "contents are
+ * irrelevant": real titles map write-discard and still rely on persistence.
+ * The private array persists across maps and holds the last published image,
+ * so once it has received D3D content a write-discard map needs neither the
+ * D3D snapshot nor any wait. The first map after registration always copies. */
 static BOOL cpu_needs_input(ZludaCpuTexture *t)
 {
-    return t->map_flags!=2;
+    return t->map_flags!=2 || !t->primed;
 }
 /* Index of the last input resource sharing t's immediate context, so each
  * context with input gets exactly one completion wait. */
@@ -322,6 +325,7 @@ static int cpu_map(unsigned count, CUgraphicsResource *resources, CUstream strea
             ZludaCpuTexture *t=cpu_find(resources[i]);
             if(!cpu_needs_input(t)) continue; /* caller discards the entire old image */
             result=cpu_upload(t,stream,ptsz);
+            if(!result) t->primed=TRUE;
             if(result) {
                 /* State stays unmapped after a partial batch failure. Drain
                  * earlier uploads before a retry, unregister or bounce reuse. */
