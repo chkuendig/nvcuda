@@ -3,7 +3,6 @@
  */
 #include <windows.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <string.h>
 #include "wire.h"
 
@@ -63,7 +62,6 @@ int WINAPI cuDeviceGetAttribute(int *value, int attr, int dev)
         uint32_t id = 0;
         if (get_id(topo.gpu[0].handle, &id)) return 801;
         memcpy(value, &id, 4);
-        fprintf(stderr, "cuda32: PhysX adapter dev=%d nvapi_id=%08x\n", dev, id);
         return 0;
     }
     CALL(C32_DEVICE_ATTR, P(value), attr, dev);
@@ -382,8 +380,5 @@ int WINAPI cuGetExportTable(const void **table, const unsigned char *guid)
     if (!memcmp(guid, storage_guid, 16)) { *table = storage_table; return 0; }
     if (!memcmp(guid, heap_guid, 16)) { *table = heap_table; return 0; }
     if (!memcmp(guid, create_guid, 16)) { *table = ctx_create_table; return 0; }
-    fprintf(stderr, "cuda32: export table ");
-    for (unsigned i = 0; i < 16; ++i) fprintf(stderr, "%02x", guid[i]);
-    fprintf(stderr, " unsupported\n");
     return 801;
 }

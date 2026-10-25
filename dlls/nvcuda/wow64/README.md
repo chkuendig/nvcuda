@@ -64,7 +64,6 @@ reuse. Those are prototype constraints, not adopted production defaults.
 Legacy device properties, compute capability, 32-bit total-memory outputs and
 context push/pop are now covered by the fixture, including a new Windows
 thread. Total memory advertises at most the bounded pool's usable capacity.
-`ZLUDA_WOW64_TRACE=1` enables opcode/result logging for startup diagnostics.
 
 Asylum exposed the former one-context limit after its private NVAPI topology
 query was implemented. A fresh-prefix fixture now exercises two contexts

@@ -33,13 +33,6 @@ static struct dark_table *dark;
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static void *library;
 static uint32_t generation;
-/* ZLUDA_WOW64_TRACE=1 logs every call; =2 also logs launch arguments. */
-static int trace_level(void)
-{
-    static int level = -1;
-    if (level < 0) { const char *t = getenv("ZLUDA_WOW64_TRACE"); level = t ? atoi(t) : 0; if (level < 0) level = 0; }
-    return level;
-}
 struct global { char *name; uint32_t offset, bytes; };
 struct handle {
     void *ptr; char *name; uint32_t id, owner, ctx_id, nargs, nglobals; int type;
@@ -174,7 +167,6 @@ static int load_backend(void)
     if (path[0] != '/') return UNSUPPORTED;
     void *lib = dlopen(path, RTLD_NOW | RTLD_LOCAL);
     if (!lib) { const char *err = dlerror(); fprintf(stderr, "nvcuda wow64: dlopen %s failed: %s\n", path, err ? err : "(null)"); return UNSUPPORTED; }
-    fprintf(stderr, "nvcuda wow64: loaded %s\n", path);
 #define LOAD(name) do { *(void **)(&p_##name) = dlsym(lib, #name); \
     if (!p_##name) { dlclose(lib); return UNSUPPORTED; } } while (0)
     LOAD(cuInit); LOAD(cuDriverGetVersion); LOAD(cuDeviceGetCount); LOAD(cuDeviceGet);
@@ -307,10 +299,8 @@ static int alloc_range(uint32_t requested, uint32_t owner, uint32_t *result)
     }
     if (!pool) {
         int rc = p_cuMemAlloc_v2(&pool, POOL_BYTES); if (rc) return rc;
-        if (trace_level()) fprintf(stderr, "cuda32: pool ctx=%u base=%016llx bytes=%08x\n", active->id, (unsigned long long)pool, POOL_BYTES);
     }
     allocations[slot] = (struct allocation){offset, requested, bytes, owner};
-    if (trace_level()) fprintf(stderr, "cuda32: alloc ctx=%u offset=%08x bytes=%08x reserved=%08x owner=%u\n", active->id, offset, requested, bytes, owner);
     *result = offset;
     return 0;
 }
@@ -498,7 +488,6 @@ static int dispatch(unsigned op, struct cuda32_call *p)
         for (unsigned i = 0; i < MAX_ALLOCS; ++i) if (allocations[i].bytes && allocations[i].offset == p->a[0]) {
             if (allocations[i].owner) return INVALID;
             rc = p_cuCtxSynchronize();
-            if (trace_level()) fprintf(stderr, "cuda32: free ctx=%u offset=%08x bytes=%08x rc=%d\n", active->id, allocations[i].offset, allocations[i].bytes, rc);
             if (!rc) memset(&allocations[i], 0, sizeof(allocations[i]));
             return rc;
         }
@@ -543,28 +532,6 @@ static int dispatch(unsigned op, struct cuda32_call *p)
             wrapper.magic = magic; wrapper.version = w[1];
             wrapper.data = ptr(w[2]); wrapper.extra = ptr(w[3]);
             if (!wrapper.data) return INVALID;
-            const char *capture = getenv("ZLUDA_WOW64_FATBIN_CAPTURE");
-            if (capture && capture[0] == '/') {
-                uint32_t header_magic;
-                uint16_t header_size;
-                uint64_t file_bytes;
-                memcpy(&header_magic, wrapper.data, 4);
-                memcpy(&header_size, (const char *)wrapper.data + 6, 2);
-                memcpy(&file_bytes, (const char *)wrapper.data + 8, 8);
-                if (header_magic == 0xba55ed50 && header_size >= 16 &&
-                    file_bytes <= 64u * 1024 * 1024) {
-                    static unsigned capture_id;
-                    char filename[1024];
-                    int length = snprintf(filename, sizeof(filename), "%s/module-%u.fatbin", capture, capture_id++);
-                    if (length > 0 && (size_t)length < sizeof(filename)) {
-                        FILE *file = fopen(filename, "wb");
-                        if (file) {
-                            fwrite(wrapper.data, 1, header_size + (size_t)file_bytes, file);
-                            fclose(file);
-                        }
-                    }
-                }
-            }
             if (fatbin_has_ptx(wrapper.data) == 0) {
                 fprintf(stderr, "cuda32: fatbin contains no PTX: CUDA_ERROR_NO_BINARY_FOR_GPU\n");
                 return 209;
@@ -572,14 +539,12 @@ static int dispatch(unsigned op, struct cuda32_call *p)
             image = &wrapper;
         }
         rc = p_cuModuleLoadData(&module, image);
-        fprintf(stderr, "cuda32: module image=%08x backend_load=%d\n", magic, rc);
         if (rc) return rc;
         static const unsigned char guid[16] = {0xEE,0x37,0x6A,0x1B,0xB8,0x58,0x42,0xEB,0xA5,0x2D,0x9A,0x10,0x6D,0x50,0xD9,0x14};
         rc = p_cuGetExportTable((const void **)&dark, guid);
         if (!rc && (!dark || !dark->globals || !dark->args)) rc = UNSUPPORTED;
         uint32_t count = 0;
         if (!rc) rc = dark->globals(NULL, NULL, NULL, NULL, &count, module);
-        fprintf(stderr, "cuda32: module metadata32=%d globals=%u\n", rc, count);
         if (rc) { p_cuModuleUnload(module); return rc; }
         struct handle *h = new_handle(module, 2);
         if (!h) { p_cuModuleUnload(module); return OOM; }
@@ -648,7 +613,6 @@ static int dispatch(unsigned op, struct cuda32_call *p)
         if (p->a[1]) { rc = translate(p->a[1], p->a[2] ? p->a[2] : 1, &address); if (rc) return rc; }
         size_t offset = 0;
         rc = p_cuTexRefSetAddress_v2(&offset, h->ptr, address, p->a[2]);
-        if (trace_level()) fprintf(stderr, "cuda32: texbind ref=%08x offset=%08x bytes=%08x address=%016llx rc=%d\n", p->a[0], p->a[1], p->a[2], (unsigned long long)address, rc);
         if (rc) return rc;
         if (offset > UINT32_MAX) return UNSUPPORTED;
         if (p->a[3]) { uint32_t narrow = offset; memcpy(ptr(p->a[3]), &narrow, 4); }
@@ -669,7 +633,6 @@ static int dispatch(unsigned op, struct cuda32_call *p)
             if (!p->a[1]) return INVALID;
             if (p->a[2] & ~1u) return UNSUPPORTED;
             rc = register_host(ptr(p->a[0]), p->a[1], p->a[2]);
-            if (trace_level()) fprintf(stderr, "cuda32: hostreg ptr=%08x bytes=%08x flags=%08x rc=%d\n", p->a[0], p->a[1], p->a[2], rc);
         } else {
             void *active = NULL;
             rc = p_cuCtxGetCurrent(&active); if (rc) return rc;
@@ -766,7 +729,6 @@ static int dispatch(unsigned op, struct cuda32_call *p)
         h->owner = m->id; h->nargs = count;
         rc = dark->args(h->args, &count, function);
         if (rc) { memset(h, 0, sizeof(*h)); return rc; }
-        if (trace_level()) fprintf(stderr, "cuda32: function id=%08x module=%08x nargs=%u name=%s\n", h->id, m->id, count, (const char *)ptr(p->a[2]));
         memcpy(ptr(p->a[0]), &h->id, 4); return 0;
     }
     case C32_LAUNCH: {
@@ -802,17 +764,6 @@ static int dispatch(unsigned op, struct cuda32_call *p)
         }
         params[h->nargs] = &pool;
         for (unsigned i = 0; i < m->nglobals; ++i) params[h->nargs + 1 + i] = &m->globals[i].offset;
-        if (trace_level() >= 2) {
-            fprintf(stderr, "cuda32: launch fn=%08x grid=%u,%u,%u block=%u,%u,%u shared=%u stream=%08x args=", p->a[0], p->a[1], p->a[2], p->a[3], p->a[4], p->a[5], p->a[6], p->a[7], p->a[8]);
-            for (unsigned i = 0; i < h->nargs; ++i) {
-                const unsigned char *b = params[i];
-                unsigned n = h->args[i].size > 16 ? 16 : h->args[i].size;
-                /* little-endian value, most significant byte first */
-                for (unsigned k = n; k-- > 0;) fprintf(stderr, "%02x", b[k]);
-                fputc(i + 1 < h->nargs ? ',' : '\n', stderr);
-            }
-            if (!h->nargs) fputc('\n', stderr);
-        }
         return p_cuLaunchKernel(h->ptr, p->a[1], p->a[2], p->a[3], p->a[4], p->a[5], p->a[6],
                                p->a[7], stream ? stream->ptr : NULL, params, NULL);
     }
@@ -822,13 +773,9 @@ static int dispatch(unsigned op, struct cuda32_call *p)
 
 static int call(unsigned op, void *args)
 {
-    struct cuda32_call snapshot = *(struct cuda32_call *)args;
     pthread_mutex_lock(&lock);
     int rc = dispatch(op, args);
     pthread_mutex_unlock(&lock);
-    if (trace_level() >= 1)
-        fprintf(stderr, "cuda32: op=%u args=%08x,%08x,%08x result=%d\n",
-                op, snapshot.a[0], snapshot.a[1], snapshot.a[2], rc);
     return rc;
 }
 #define ENTRY(name, op) static int name(void *p) { return call(op, p); }
