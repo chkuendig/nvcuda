@@ -20,7 +20,117 @@ typedef CUresult (WINAPI *copy_t)(const CUDA_MEMCPY2D *);
 typedef CUresult (WINAPI *unreg_t)(CUgraphicsResource);
 #define CU(call) do { CUresult r=(call); if(r) { fprintf(stderr,"FAIL %s = %d\n",#call,r); return 3; } } while(0)
 #define HR(call) do { HRESULT r=(call); if(FAILED(r)) { fprintf(stderr,"FAIL %s = 0x%lx\n",#call,(unsigned long)r); return 4; } } while(0)
+typedef CUresult (WINAPI *flags_t)(CUgraphicsResource,unsigned);
+typedef CUresult (WINAPI *stream_create_t)(CUstream *,unsigned);
+typedef CUresult (WINAPI *stream_t)(CUstream);
+typedef struct RelayApi {
+    reg_t reg; map_t map,unmap; array_t array; copy_t copy; unreg_t unreg;
+    flags_t flags; stream_create_t create; stream_t sync,destroy;
+} RelayApi;
 static float input[W*H*4], output[W*H*4];
+typedef struct LockWorker { ID3D10Multithread *mt; volatile LONG stop,progress; HANDLE started; } LockWorker;
+static DWORD WINAPI lock_worker(void *arg)
+{
+    LockWorker *w=arg;
+    SetEvent(w->started);
+    while(!InterlockedCompareExchange(&w->stop,0,0)) {
+        ID3D10Multithread_Enter(w->mt);
+        InterlockedIncrement(&w->progress);
+        ID3D10Multithread_Leave(w->mt);
+        Sleep(0);
+    }
+    return 0;
+}
+static int relay_cases(RelayApi *a, ID3D11Device *dev, ID3D11DeviceContext *dc,
+                       ID3D10Multithread *mt, ID3D11Texture2D *staging)
+{
+    D3D11_TEXTURE2D_DESC td={0};
+    ID3D11Texture2D *textures[2];
+    CUgraphicsResource resources[2];
+    CUstream stream;
+    LockWorker worker={0};
+    HANDLE thread;
+    td.Width=W; td.Height=H; td.MipLevels=td.ArraySize=td.SampleDesc.Count=1;
+    td.Format=DXGI_FORMAT_R32G32B32A32_FLOAT; td.Usage=D3D11_USAGE_DEFAULT;
+    td.BindFlags=D3D11_BIND_SHADER_RESOURCE|D3D11_BIND_RENDER_TARGET;
+    CU(a->create(&stream,1)); /* nonblocking stream: no default-stream ordering crutch */
+    for(unsigned n=0;n<2;n++) {
+        HR(ID3D11Device_CreateTexture2D(dev,&td,NULL,&textures[n]));
+        for(unsigned flag=1;flag<=8;flag*=2) {
+            CUgraphicsResource bad=NULL;
+            if(a->reg(&bad,(ID3D11Resource*)textures[n],flag)!=801) return 11;
+        }
+        CU(a->reg(&resources[n],(ID3D11Resource*)textures[n],0));
+        if(a->flags(resources[n],3)!=1 || a->flags(resources[n],4)!=1 ||
+           a->flags(resources[n],~0u)!=1) return 11;
+    }
+    worker.mt=mt; worker.started=CreateEventA(NULL,TRUE,FALSE,NULL);
+    thread=CreateThread(NULL,0,lock_worker,&worker,0,NULL);
+    if(!worker.started || !thread || WaitForSingleObject(worker.started,5000)!=WAIT_OBJECT_0) return 12;
+    InterlockedExchange(&worker.progress,0);
+    /* Same-content remaps exercise B's verified skip; intervening D3D writes
+     * must invalidate it, even though these resources are RTV-bound. The
+     * companion relay-contract.py forces NOT_READY and verifies each poll
+     * drops the lock and that all copies precede the single context wait. */
+    for(unsigned pass=0;pass<6;pass++) {
+        for(unsigned i=0;i<W*H*4;i++) input[i]=(float)(i%311+pass*1000);
+        if(pass%2==0) for(unsigned n=0;n<2;n++)
+            ID3D11DeviceContext_UpdateSubresource(dc,(ID3D11Resource*)textures[n],0,NULL,input,W*16,0);
+        else for(unsigned i=0;i<W*H*4;i++) input[i]=(float)(i%311+(pass-1)*1000);
+        CU(a->map(2,resources,stream)); CU(a->sync(stream));
+        if(a->flags(resources[0],1)!=208) return 11;
+        for(unsigned n=0;n<2;n++) {
+            CUarray array; CUDA_MEMCPY2D copy={0};
+            CU(a->array(&array,resources[n],0,0));
+            copy.srcMemoryType=3; copy.srcArray=array; copy.dstMemoryType=1;
+            copy.dstHost=output; copy.dstPitch=copy.WidthInBytes=W*16; copy.Height=H;
+            CU(a->copy(&copy));
+            if(memcmp(input,output,sizeof(input))) return 13;
+        }
+        CU(a->unmap(2,resources,stream));
+    }
+    /* READ_ONLY refreshes D3D input and must never publish CUDA output.
+     * WRITE_DISCARD requires no defined initial array contents; overwrite all. */
+    for(unsigned mode=1;mode<=2;mode++) {
+        for(unsigned n=0;n<2;n++) CU(a->flags(resources[n],mode));
+        for(unsigned i=0;i<W*H*4;i++) input[i]=(float)(i%127+7000+mode);
+        for(unsigned n=0;n<2;n++) ID3D11DeviceContext_UpdateSubresource(dc,(ID3D11Resource*)textures[n],0,NULL,input,W*16,0);
+        CU(a->map(2,resources,stream)); CU(a->sync(stream));
+        for(unsigned n=0;n<2;n++) {
+            CUarray array; CUDA_MEMCPY2D copy={0};
+            CU(a->array(&array,resources[n],0,0));
+            copy.WidthInBytes=W*16; copy.Height=H;
+            if(mode==1) {
+                copy.srcMemoryType=3; copy.srcArray=array; copy.dstMemoryType=1;
+                copy.dstHost=output; copy.dstPitch=W*16;
+                CU(a->copy(&copy)); if(memcmp(input,output,sizeof(input))) return 14;
+            } else {
+                copy.srcMemoryType=1; copy.srcHost=input; copy.srcPitch=W*16;
+                copy.dstMemoryType=3; copy.dstArray=array; CU(a->copy(&copy));
+            }
+        }
+        CU(a->unmap(2,resources,stream));
+        for(unsigned n=0;n<2;n++) {
+            D3D11_MAPPED_SUBRESOURCE mapped;
+            ID3D11DeviceContext_CopyResource(dc,(ID3D11Resource*)staging,(ID3D11Resource*)textures[n]);
+            HR(ID3D11DeviceContext_Map(dc,(ID3D11Resource*)staging,0,D3D11_MAP_READ,0,&mapped));
+            for(unsigned y=0;y<H;y++) if(memcmp(input+y*W*4,(char*)mapped.pData+y*mapped.RowPitch,W*16)) return 14;
+            ID3D11DeviceContext_Unmap(dc,(ID3D11Resource*)staging,0);
+        }
+        printf("PASS batch map flag=%u nondefault stream\n",mode);
+    }
+    InterlockedExchange(&worker.stop,1);
+    if(WaitForSingleObject(thread,5000)!=WAIT_OBJECT_0 || !worker.progress) return 12;
+    printf("PASS concurrent D3D lock progress=%ld (forced polling checked by relay-contract)\n",worker.progress);
+    CloseHandle(thread); CloseHandle(worker.started);
+    for(unsigned n=0;n<2;n++) {
+        CU(a->flags(resources[n],0)); CU(a->unreg(resources[n]));
+        ID3D11Texture2D_Release(textures[n]);
+    }
+    CU(a->destroy(stream));
+    puts("PASS batched same-content remap and D3D-write fallback");
+    return 0;
+}
 int main(void) {
     if (!freopen("interop-result.txt","w",stdout) || !freopen("interop-result.txt","a",stderr)) return 7;
     setvbuf(stdout,NULL,_IONBF,0); setvbuf(stderr,NULL,_IONBF,0);
@@ -29,6 +139,8 @@ int main(void) {
     LOAD(cuGraphicsD3D11RegisterResource,reg_t); LOAD(cuGraphicsMapResources,map_t);
     LOAD(cuGraphicsUnmapResources,map_t); LOAD(cuGraphicsSubResourceGetMappedArray,array_t);
     LOAD(cuMemcpy2D_v2,copy_t); LOAD(cuGraphicsUnregisterResource,unreg_t);
+    LOAD(cuGraphicsResourceSetMapFlags,flags_t); LOAD(cuStreamCreate,stream_create_t);
+    LOAD(cuStreamSynchronize,stream_t); LOAD(cuStreamDestroy_v2,stream_t);
     CU(cuInit(0)); CUcontext ctx; CU(cuCtxCreate_v2(&ctx,0,0));
     ID3D11Device *dev; ID3D11DeviceContext *dc; D3D_FEATURE_LEVEL level;
     HR(D3D11CreateDevice(NULL,D3D_DRIVER_TYPE_HARDWARE,NULL,0,NULL,0,D3D11_SDK_VERSION,&dev,&level,&dc));
@@ -95,6 +207,10 @@ int main(void) {
         }
         CU(cuGraphicsUnregisterResource(res));
     }
+    RelayApi api={cuGraphicsD3D11RegisterResource,cuGraphicsMapResources,cuGraphicsUnmapResources,
+        cuGraphicsSubResourceGetMappedArray,cuMemcpy2D_v2,cuGraphicsUnregisterResource,
+        cuGraphicsResourceSetMapFlags,cuStreamCreate,cuStreamSynchronize,cuStreamDestroy_v2};
+    int relay_result=relay_cases(&api,dev,dc,mt,staging); if(relay_result) return relay_result;
     ID3D11Texture2D_Release(staging); ID3D11Texture2D_Release(texture);
     ID3D10Multithread_Release(mt); ID3D11DeviceContext_Release(dc); ID3D11Device_Release(dev); CU(cuCtxDestroy_v2(ctx));
     puts("PASS all interop checks"); return 0;
