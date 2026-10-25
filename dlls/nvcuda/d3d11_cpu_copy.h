@@ -162,6 +162,12 @@ static void cpu_copy_resource(ZludaCpuTexture *t, BOOL to_cuda)
         (ID3D11Resource*)(to_cuda?t->texture:t->staging));
     ID3D10Multithread_Leave(t->multithread);
 }
+/* Poll back-off: a few immediate yields cover short GPU tails, then sleep so
+ * waiting on a busy GPU or a staging copy does not spin a CPU core. */
+static void cpu_poll_backoff(unsigned attempt)
+{
+    Sleep(attempt<4?0:1);
+}
 /* WRITE_DISCARD leaves the mapped contents undefined, so such a map needs
  * neither the D3D snapshot nor any wait for earlier D3D or CUDA work: CUDA
  * writes only the private array, and unmap publishes in D3D context order. */
@@ -187,7 +193,7 @@ static BOOL cpu_last_input_of_context(unsigned count, CUgraphicsResource *resour
  * flush the game. A batch spanning devices needs one wait per context. */
 static CUresult cpu_wait_batch(unsigned count, CUgraphicsResource *resources)
 {
-    unsigned i;
+    unsigned i,attempt;
     HRESULT hr;
     ULONGLONG start;
     for(i=0;i<count;i++) {
@@ -204,13 +210,14 @@ static CUresult cpu_wait_batch(unsigned count, CUgraphicsResource *resources)
         ZludaCpuTexture *t=cpu_find(resources[i]);
         if(!cpu_last_input_of_context(count,resources,i)) continue;
         start=GetTickCount64();
+        attempt=0;
         do {
             ID3D10Multithread_Enter(t->multithread);
             hr=ID3D11DeviceContext_GetData(t->context,(ID3D11Asynchronous*)t->ready,NULL,0,D3D11_ASYNC_GETDATA_DONOTFLUSH);
             ID3D10Multithread_Leave(t->multithread);
             if(hr!=S_FALSE) break;
             if(GetTickCount64()-start>=30000) return CUDA_ERROR_UNKNOWN;
-            Sleep(0);
+            cpu_poll_backoff(attempt++);
         } while(1);
         if(hr!=S_OK) return CUDA_ERROR_UNKNOWN;
     }
@@ -220,6 +227,7 @@ static CUresult cpu_stage_map(ZludaCpuTexture *t, BOOL to_cuda, D3D11_MAPPED_SUB
 {
     HRESULT hr;
     ULONGLONG start=GetTickCount64();
+    unsigned attempt=0;
     do {
         ID3D10Multithread_Enter(t->multithread);
         hr=ID3D11DeviceContext_Map(t->context,(ID3D11Resource*)t->staging,0,
@@ -227,7 +235,7 @@ static CUresult cpu_stage_map(ZludaCpuTexture *t, BOOL to_cuda, D3D11_MAPPED_SUB
         ID3D10Multithread_Leave(t->multithread);
         if(hr!=DXGI_ERROR_WAS_STILL_DRAWING) break;
         if(GetTickCount64()-start>=30000) return CUDA_ERROR_UNKNOWN;
-        Sleep(0);
+        cpu_poll_backoff(attempt++);
     } while(1);
     return FAILED(hr)?CUDA_ERROR_UNKNOWN:CUDA_SUCCESS;
 }
