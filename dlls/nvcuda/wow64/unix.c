@@ -166,7 +166,7 @@ static int load_backend(void)
     }
     if (path[0] != '/') return UNSUPPORTED;
     void *lib = dlopen(path, RTLD_NOW | RTLD_LOCAL);
-    if (!lib) { const char *err = dlerror(); fprintf(stderr, "nvcuda wow64: dlopen %s failed: %s\n", path, err ? err : "(null)"); return UNSUPPORTED; }
+    if (!lib) return UNSUPPORTED;
 #define LOAD(name) do { *(void **)(&p_##name) = dlsym(lib, #name); \
     if (!p_##name) { dlclose(lib); return UNSUPPORTED; } } while (0)
     LOAD(cuInit); LOAD(cuDriverGetVersion); LOAD(cuDeviceGetCount); LOAD(cuDeviceGet);
@@ -533,7 +533,6 @@ static int dispatch(unsigned op, struct cuda32_call *p)
             wrapper.data = ptr(w[2]); wrapper.extra = ptr(w[3]);
             if (!wrapper.data) return INVALID;
             if (fatbin_has_ptx(wrapper.data) == 0) {
-                fprintf(stderr, "cuda32: fatbin contains no PTX: CUDA_ERROR_NO_BINARY_FOR_GPU\n");
                 return 209;
             }
             image = &wrapper;
@@ -641,7 +640,7 @@ static int dispatch(unsigned op, struct cuda32_call *p)
         }
         switch (rc) { /* common HIP/CUDA values; unknown runtime errors stay errors */
         case 0: case 1: case 2: case 100: case 101: case 201: case 712: case 713: case 801: return rc;
-        default: fprintf(stderr, "cuda32: HIP host registration error=%d\n", rc); return 999;
+        default: return 999;
         }
     }
     case C32_EVENT_CREATE: case C32_STREAM_CREATE: {
