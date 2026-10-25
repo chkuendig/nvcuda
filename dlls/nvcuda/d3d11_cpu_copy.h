@@ -162,18 +162,37 @@ static void cpu_copy_resource(ZludaCpuTexture *t, BOOL to_cuda)
         (ID3D11Resource*)(to_cuda?t->texture:t->staging));
     ID3D10Multithread_Leave(t->multithread);
 }
-/* One EVENT after all copies per immediate context. Flush submits the batch;
- * DONOTFLUSH polls cannot strand unsubmitted work or repeatedly flush the game.
- * A batch spanning devices needs one completion wait for each context. */
+/* WRITE_DISCARD leaves the mapped contents undefined, so such a map needs
+ * neither the D3D snapshot nor any wait for earlier D3D or CUDA work: CUDA
+ * writes only the private array, and unmap publishes in D3D context order. */
+static BOOL cpu_needs_input(ZludaCpuTexture *t)
+{
+    return t->map_flags!=2;
+}
+/* Index of the last input resource sharing t's immediate context, so each
+ * context with input gets exactly one completion wait. */
+static BOOL cpu_last_input_of_context(unsigned count, CUgraphicsResource *resources, unsigned i)
+{
+    ZludaCpuTexture *t=cpu_find(resources[i]);
+    unsigned j;
+    if(!cpu_needs_input(t)) return FALSE;
+    for(j=i+1;j<count;j++) {
+        ZludaCpuTexture *u=cpu_find(resources[j]);
+        if(cpu_needs_input(u) && u->context==t->context) return FALSE;
+    }
+    return TRUE;
+}
+/* One EVENT after all copies per immediate context with input. Flush submits
+ * the batch; DONOTFLUSH polls cannot strand unsubmitted work or repeatedly
+ * flush the game. A batch spanning devices needs one wait per context. */
 static CUresult cpu_wait_batch(unsigned count, CUgraphicsResource *resources)
 {
-    unsigned i,j;
+    unsigned i;
     HRESULT hr;
     ULONGLONG start;
     for(i=0;i<count;i++) {
         ZludaCpuTexture *t=cpu_find(resources[i]);
-        for(j=i+1;j<count;j++) if(cpu_find(resources[j])->context==t->context) break;
-        if(j!=count) continue;
+        if(!cpu_last_input_of_context(count,resources,i)) continue;
         ID3D10Multithread_Enter(t->multithread);
         ID3D11DeviceContext_End(t->context,(ID3D11Asynchronous*)t->ready);
         ID3D10Multithread_Leave(t->multithread);
@@ -183,8 +202,7 @@ static CUresult cpu_wait_batch(unsigned count, CUgraphicsResource *resources)
     }
     for(i=0;i<count;i++) {
         ZludaCpuTexture *t=cpu_find(resources[i]);
-        for(j=i+1;j<count;j++) if(cpu_find(resources[j])->context==t->context) break;
-        if(j!=count) continue;
+        if(!cpu_last_input_of_context(count,resources,i)) continue;
         start=GetTickCount64();
         do {
             ID3D10Multithread_Enter(t->multithread);
@@ -283,16 +301,18 @@ static int cpu_map(unsigned count, CUgraphicsResource *resources, CUstream strea
         if(t->mapped!=unmap) { result=unmap?211:208; goto done; }
     }
     if(!unmap) {
+        for(i=0;i<count;i++) if(cpu_needs_input(cpu_find(resources[i]))) break;
+        if(i==count) goto mapped; /* all WRITE_DISCARD: no snapshot, no waits */
         result=ptsz?pcuStreamSynchronize_ptsz(stream):pcuStreamSynchronize(stream);
         if(result) goto done;
         for(i=0;i<count;i++) {
             ZludaCpuTexture *t=cpu_find(resources[i]);
-            if(t->map_flags!=2) cpu_copy_resource(t,TRUE);
+            if(cpu_needs_input(t)) cpu_copy_resource(t,TRUE);
         }
         result=cpu_wait_batch(count,resources); if(result) goto done;
         for(i=0;i<count;i++) {
             ZludaCpuTexture *t=cpu_find(resources[i]);
-            if(t->map_flags==2) continue; /* caller discards the entire old image */
+            if(!cpu_needs_input(t)) continue; /* caller discards the entire old image */
             result=cpu_upload(t,stream,ptsz);
             if(result) {
                 /* State stays unmapped after a partial batch failure. Drain
@@ -319,6 +339,7 @@ static int cpu_map(unsigned count, CUgraphicsResource *resources, CUstream strea
             result=cpu_publish(t); if(result) goto done;
         }
     }
+mapped:
     for(i=0;i<count;i++) cpu_find(resources[i])->mapped=!unmap;
     { static unsigned messages; if(messages++<4) FIXME("[ZLUDA] CPU-copy %s OK count=%u\n",unmap?"unmap":"map",count); }
 done:

@@ -119,6 +119,45 @@ static int relay_cases(RelayApi *a, ID3D11Device *dev, ID3D11DeviceContext *dc,
         }
         printf("PASS batch map flag=%u nondefault stream\n",mode);
     }
+    /* Flag contract with distinct D3D and CUDA images. WRITE_DISCARD may leave
+     * the mapped array undefined but must publish CUDA's full overwrite exactly,
+     * after D3D work issued before the map. READ_ONLY input stays exact and a
+     * CUDA scribble is never published. A mixed batch keeps flag-0 input exact. */
+    {
+        static float cuda_image[W*H*4];
+        unsigned modes[3][2]={{2,2},{1,1},{2,0}};
+        for(unsigned c=0;c<3;c++) {
+            for(unsigned n=0;n<2;n++) CU(a->flags(resources[n],modes[c][n]));
+            for(unsigned i=0;i<W*H*4;i++) { input[i]=(float)(i%211+9000+c*100); cuda_image[i]=(float)(i%113)-500.0f-(float)(c*100); }
+            for(unsigned n=0;n<2;n++) ID3D11DeviceContext_UpdateSubresource(dc,(ID3D11Resource*)textures[n],0,NULL,input,W*16,0);
+            CU(a->map(2,resources,stream));
+            for(unsigned n=0;n<2;n++) {
+                CUarray array; CUDA_MEMCPY2D copy={0};
+                CU(a->array(&array,resources[n],0,0));
+                copy.WidthInBytes=W*16; copy.Height=H;
+                if(modes[c][n]!=2) {
+                    copy.srcMemoryType=3; copy.srcArray=array; copy.dstMemoryType=1;
+                    copy.dstHost=output; copy.dstPitch=W*16;
+                    CU(a->sync(stream)); CU(a->copy(&copy)); if(memcmp(input,output,sizeof(input))) return 15;
+                    memset(&copy,0,sizeof(copy)); copy.WidthInBytes=W*16; copy.Height=H;
+                }
+                if(modes[c][n]!=0) { /* discard: overwrite; read-only: scribble that must stay private */
+                    copy.srcMemoryType=1; copy.srcHost=cuda_image; copy.srcPitch=W*16;
+                    copy.dstMemoryType=3; copy.dstArray=array; CU(a->copy(&copy));
+                }
+            }
+            CU(a->unmap(2,resources,stream));
+            for(unsigned n=0;n<2;n++) {
+                D3D11_MAPPED_SUBRESOURCE mapped;
+                const float *want=modes[c][n]==2?cuda_image:input;
+                ID3D11DeviceContext_CopyResource(dc,(ID3D11Resource*)staging,(ID3D11Resource*)textures[n]);
+                HR(ID3D11DeviceContext_Map(dc,(ID3D11Resource*)staging,0,D3D11_MAP_READ,0,&mapped));
+                for(unsigned y=0;y<H;y++) if(memcmp(want+y*W*4,(char*)mapped.pData+y*mapped.RowPitch,W*16)) return 15;
+                ID3D11DeviceContext_Unmap(dc,(ID3D11Resource*)staging,0);
+            }
+        }
+        puts("PASS flag contract: discard publishes exact overwrite, read-only never publishes, mixed batch input exact");
+    }
     InterlockedExchange(&worker.stop,1);
     if(WaitForSingleObject(thread,5000)!=WAIT_OBJECT_0 || !worker.progress) return 12;
     printf("PASS concurrent D3D lock progress=%ld (forced polling checked by relay-contract)\n",worker.progress);
